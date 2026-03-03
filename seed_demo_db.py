@@ -43,10 +43,10 @@ print(f"[seed] Schema created at {DB_PATH}")
 
 if not os.path.exists(MODEL_PATH):
     print("[seed] Training risk model (first run)...")
-    artifact = train_and_save(force_retrain=False)
+    artifact = train_and_save(force_retrain=True)
 else:
-    print("[seed] Loading existing model...")
-    artifact = load_model()
+    print("[seed] Forcing model retrain to pick up latest fixes...")
+    artifact = train_and_save(force_retrain=True)
 
 cohort_stats = artifact["cohort_stats"]
 print(f"[seed] Model version: {artifact['model_version']}")
@@ -97,6 +97,7 @@ for _, child in children_df.iterrows():
     )
 
 conn.commit()
+conn.close()
 print(f"[seed] Inserted {len(children_df)} children and consent records")
 
 
@@ -104,6 +105,7 @@ print(f"[seed] Inserted {len(children_df)} children and consent records")
 
 assessment_ids_written = []
 risk_results_written = []
+conn = get_connection(DB_PATH)
 
 for _, row in assessments_df.iterrows():
     assessment_id = row["assessment_id"]
@@ -176,6 +178,13 @@ for _, row in assessments_df.iterrows():
         "computed_at":    datetime.now().isoformat(),
         "model_version":  result["model_version"],
     })
+    
+    # Commit here so the log_screening function running in a separate connection 
+    # can actually read/insert safely without a lock.
+    conn.commit()
+    
+    # Close connection to allow log_screening to open its own connection
+    conn.close()
 
     # Log to decision trace
     log_screening(
@@ -188,8 +197,12 @@ for _, row in assessments_df.iterrows():
         db_path=DB_PATH,
     )
     assessment_ids_written.append(assessment_id)
+    
+    # Re-open connection for the next loop iteration
+    conn = get_connection(DB_PATH)
 
 conn.commit()
+conn.close()
 print(f"[seed] Inserted {len(assessment_ids_written)} assessments + risk results")
 
 
@@ -205,6 +218,7 @@ traj_df = compute_all_trajectories(
     cohort_stats,
 )
 
+conn = get_connection(DB_PATH)
 for _, traj in traj_df.iterrows():
     conn.execute(
         """INSERT OR IGNORE INTO developmental_trajectories
