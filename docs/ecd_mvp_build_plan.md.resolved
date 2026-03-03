@@ -1,0 +1,548 @@
+# ECD Decision Support Layer – 2-Engineer MVP Build Plan
+## Execution Plan for Innovation Challenge Submission
+
+> **Team:** 2 Engineers (Engineer A: ML/Backend, Engineer B: Frontend/Data)
+> **Goal:** Shortlisting + strong Demo Day performance
+> **Priority order:** Defensibility → Impact demonstration → Polish
+
+---
+
+# Section A – Scope Freeze
+
+## A.1 What WILL Be Built
+
+| # | Component | Owner | Notes |
+|---|---|---|---|
+| 1 | Multi-domain risk engine (Cognitive, Motor, Socio-Emotional) | Eng A | XGBoost/LightGBM; trained on validated synthetic data |
+| 2 | SHAP explainability integration | Eng A | Top-3 plain-language feature contributions per prediction |
+| 3 | Probability calibration (Isotonic Regression) | Eng A | ECE ≤ 0.08 target; reliability diagram output |
+| 4 | False-negative monitoring logic | Eng A | Threshold asymmetry for High/Critical; FNR logged per run |
+| 5 | Developmental trajectory computation | Eng A | Longitudinal coefficient per domain across ≥ 2 time points |
+| 6 | Risk transition detection | Eng A | Flags Low→High, Medium→Critical transitions |
+| 7 | Cohort-level impact metrics | Eng A | Block/district aggregates: coverage rate, tier distribution |
+| 8 | AWW screening form (Streamlit) | Eng B | Domain-by-domain indicator entry; age-band validation |
+| 9 | AWW risk result view | Eng B | Tier badge + top-3 SHAP explanations in plain language |
+| 10 | Supervisor dashboard (Streamlit) | Eng B | Block-level table: child list, tier, trajectory trend, referral flag |
+| 11 | Longitudinal chart view | Eng B | Per-child trajectory line chart across time points |
+| 12 | Consent capture screen | Eng B | Consent form with method dropdown; stored in SQLite |
+| 13 | Decision trace log | Eng B | Structured log: timestamp, user, child_id, tier, top SHAP value |
+| 14 | Offline simulation mode | Eng B | "Offline" toggle disables backend; shows provisional tier from local model |
+
+**Total: 14 components. No additions permitted without explicit scope change approval.**
+
+---
+
+## A.2 What Will Be Simulated (Not Built, But Demo-Ready)
+
+| Component | Simulation Method | Why Acceptable |
+|---|---|---|
+| Android offline app | Streamlit `offline_mode` toggle; provisional ONNX-equivalent result | Demonstrates offline-first logic without mobile dev overhead |
+| Role-based access control | Session state variable in Streamlit (`st.session_state.role = 'AWW'/'Supervisor'`) | No JWT/Keycloak needed for demo; access boundary logic is identical |
+| Multi-user concurrent access | Single-user demo instance; narrative describes multi-tenancy | Evaluation judges architecture, not load |
+| PHC referral outcome capture | Static JSON fixture with 3 sample PHC outcomes pre-loaded | Demonstrates the feedback loop; no live PHC integration possible |
+| Sync conflict resolution | Simulated with a "reconnect" button that reconciles two pre-seeded offline records | Shows logic without real WorkManager implementation |
+| CDPO and State dashboards | Read-only pre-generated PDF or static chart | Core eval weight is on AWW and Supervisor experience |
+
+---
+
+## A.3 What Remains Documented But NOT Implemented
+
+The following are **full Target State Architecture** components. They exist in documentation ([ecd_system_architecture.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_system_architecture.md), [ecd_gap_closure.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_gap_closure.md)) and will be cited as post-pilot scope. Do not attempt to build any of these for the submission.
+
+- Kubernetes deployment cluster
+- Keycloak OAuth2 / RBAC system
+- TimescaleDB multi-node
+- Android Kotlin application
+- Audit log cryptographic chaining
+- CI/CD pipeline automation
+- Container scanning (Trivy)
+- Penetration testing
+- HashiCorp Vault (secret management)
+- Disaster recovery drill
+- FCM push notifications
+- NeSDA alignment
+- Full DPDP compliance matrix implementation (documented; not software-enforced)
+- MLflow experiment registry (local runs only; no server)
+
+> [!IMPORTANT]
+> When asked about these components in Demo Day Q&A, cite the architecture document page/section directly. "This is documented in our Phase 6 Security Hardening specification — here is the relevant section." Never claim they are built. Never apologise for not building them.
+
+---
+
+# Section B – Engineering Execution Structure
+
+## Role Assignment
+
+| Role | Designation | Primary Domain |
+|---|---|---|
+| Engineer A | ML + Backend | Risk engine, trajectory, calibration, SHAP, data pipeline |
+| Engineer B | Frontend + Data | Streamlit dashboards, synthetic dataset, consent, logging |
+
+Both engineers share: SQLite schema, synthetic data generation, integration testing, demo scripting.
+
+---
+
+## Build Phase 1 – Risk Engine & Validation Metrics
+
+### Objectives
+- Produce a trained, calibrated, explainable risk model that meets the 95% accuracy threshold requirement.
+- Establish the synthetic dataset pipeline.
+- Produce all validation outputs needed for submission (model card, bias report, calibration chart).
+
+### Engineer A Tasks
+1. Define feature set from indicator framework (cognitive, motor, socio-emotional per age band 0–6)
+2. Generate validated synthetic dataset (≥ 500 records; stratified by age band, gender, rural/urban)
+3. Train baseline models: Logistic Regression, XGBoost, LightGBM
+4. Select best-performing model; tune hyperparameters (Optuna or manual grid)
+5. Apply isotonic calibration; compute ECE; plot reliability diagram
+6. Integrate SHAP: compute per-prediction top-3 contributors; test plain-language label mapping
+7. Apply asymmetric decision threshold for High/Critical (sensitivity-first)
+8. Compute and document: AUC-ROC, Sensitivity, Specificity, FNR per tier, Brier Score
+9. Run disaggregated metrics by gender and geography; document in bias report
+
+### Engineer B Tasks
+1. Design SQLite schema: `children`, `assessments`, `risk_results`, `consents`, `decision_trace`
+2. Build synthetic dataset generation script (shared with Eng A)
+3. Write schema migration scripts and seed script (50 demo children, 2 time points each)
+4. Design AWW screening form in Streamlit (multi-page: consent → indicators → result)
+5. Build risk result display component: tier badge (colour-coded), top-3 SHAP labels, disclaimer text
+
+### Deliverables
+- `risk_engine.py` — trained model, calibration, SHAP integration
+- `synthetic_data_generator.py` — reproducible seed; documented distribution choices
+- `demo.db` — pre-seeded SQLite database with 50 children, 100 assessments
+- `model_card_v1.md` — intended use, training data, metrics, limitations
+- `bias_report_v1.md` — disaggregated AUC, FNR by gender/geography
+- `calibration_plot.png` — reliability diagram, included in submission
+- AWW screening form (functional in Streamlit)
+
+### Validation Criteria
+- AUC-ROC ≥ 0.80 on held-out 20% split of synthetic data
+- ECE ≤ 0.08
+- Critical-tier FNR ≤ 12%
+- SHAP top-3 labels pass readability review (both engineers can explain what they mean without looking at code)
+- Screening form accepts a complete child record and returns a risk tier without errors
+
+### Technical Simplifications
+- **SQLite instead of PostgreSQL:** Full schema is identical; PostgreSQL migration is a connection-string change. Acceptable for demo.
+- **Python dict/JSON as model API instead of FastAPI endpoint:** Risk function is callable; wrapping in REST is a 2-hour task post-shortlisting. Acceptable for demo.
+
+### Risk of Delay
+- Synthetic data distribution poorly representing real ECD patterns → SHAP produces unintuitive explanations
+- **Mitigation:** Use WHO motor milestone reference ranges and DASII norms as distribution anchors. Have domain expert (or published literature) validate indicator ranges before training.
+
+---
+
+## Build Phase 2 – Developmental Trajectory & Impact Layer
+
+### Objectives
+- Implement longitudinal developmental coefficient computation.
+- Implement risk transition detection.
+- Produce cohort-level impact metrics for the Supervisor dashboard.
+- This phase carries ~40% evaluation weight. It must produce visual, quantified output.
+
+### Engineer A Tasks
+1. Build `trajectory_engine.py`: accepts list of `(assessment_date, domain_scores)` per child; computes developmental coefficient as z-score relative to age-cohort mean
+2. Implement risk transition detector: compares tier at time T-1 vs T; emits `transition_event` record
+3. Build cohort aggregator: groups children by block/district; computes tier distribution, coverage rate, mean coefficient
+4. Write unit tests for all three functions with known input/output pairs
+5. Generate 6-month simulated longitudinal trajectory for 10 demo children (showing stable, improving, and deteriorating cases)
+
+### Engineer B Tasks
+1. Build longitudinal chart view in Streamlit: per-child domain coefficient line chart (matplotlib/Plotly); highlight risk transitions as annotated markers
+2. Build Supervisor block dashboard: sortable table (child name, age, overall tier, trajectory trend arrow, referral flag)
+3. Build cohort impact panel: bar chart of tier distribution, coverage rate metric card, "children deteriorating" count
+4. Wire trajectory engine output to dashboard components
+5. Pre-seed 3 representative child trajectories for demo: (a) Low→stable, (b) Medium→improving, (c) Medium→Critical transition
+
+### Deliverables
+- `trajectory_engine.py` with unit tests
+- `cohort_aggregator.py`
+- Streamlit longitudinal chart view (functional)
+- Streamlit Supervisor dashboard (functional)
+- 3 pre-seeded demo trajectories in `demo.db`
+
+### Validation Criteria
+- Trajectory computed correctly for all 50 demo children with ≥ 2 time points
+- Risk transitions detected correctly for all 3 pre-seeded demo cases
+- Supervisor dashboard loads in ≤ 3 seconds on demo machine
+- Cohort metrics visually show differentiation between low-risk and high-risk blocks
+
+### Technical Simplifications
+- **In-memory Pandas instead of TimescaleDB:** Trajectory queries run against SQLite via Pandas. Identical logic; TimescaleDB is a write-performance optimisation for scale. Acceptable for demo.
+- **Z-score relative to synthetic cohort mean:** Real-world coefficient would be calibrated to population norms. Synthetic cohort mean is a documented proxy. Documented in model card.
+
+### Risk of Delay
+- Trajectory visualisation takes longer than expected due to Plotly/Streamlit integration quirks
+- **Mitigation:** Build chart as static matplotlib PNG first; convert to interactive Plotly only if time permits.
+
+---
+
+## Build Phase 3 – Minimal Role-Based Dashboard
+
+### Objectives
+- Implement role switching (AWW / Supervisor views) with data scoping.
+- Implement consent capture screen.
+- Implement decision trace log.
+- Implement offline simulation toggle.
+
+### Engineer A Tasks
+1. Implement data access scoping: AWW session sees only their assigned anganwadi children; Supervisor session sees all block children (enforced by SQLite query filter, not RBAC middleware)
+2. Implement offline mode backend: when `offline_mode = True`, bypass DB call; use local Python function to return provisional risk tier from lightweight rule-based approximation (not ONNX — rule-based is sufficient for demo)
+3. Write `decision_trace.py`: logs each risk computation as structured dict: `{timestamp, session_role, child_id, tier, top_shap_feature, is_provisional}`
+
+### Engineer B Tasks
+1. Build role selector in Streamlit sidebar: AWW / Supervisor toggle (session state)
+2. Build consent capture screen: guardian name, date, method dropdown (Verbal/Thumbprint), AWW witness field; writes to `consents` table
+3. Build decision trace viewer: tabular display of trace log; exportable as CSV
+4. Build offline simulation UI: toggle in sidebar; shows amber banner "Offline Mode — Provisional Risk Only"; SHAP explanation replaced with placeholder text
+5. Build referral action widget: on High/Critical tier, AWW must select action (Home Visit / Create Referral) before navigating away; referral stored in `decision_trace`
+
+### Deliverables
+- Role-scoped data views (AWW vs Supervisor) functional
+- Consent capture screen functional and writing to DB
+- Decision trace log writing and displaying correctly
+- Offline simulation mode functional with visual indicator
+- Referral action widget blocking dismissal without action on High/Critical
+
+### Validation Criteria
+- AWW session cannot view children from other anganwadis (query-level test with seeded data)
+- Consent record written to DB on form submit
+- Decision trace logs exactly one entry per risk computation
+- Offline mode returns a plausible provisional tier without DB access
+- Referral widget blocks navigation on Critical tier (Streamlit `st.stop()` or equivalent)
+
+### Technical Simplifications
+- **Streamlit session state instead of JWT RBAC:** Role assignment is a session variable. The architecture document describes the full Keycloak RBAC design. Acceptable for demo — logic separation is identical, enforcement mechanism is simplified.
+- **Rule-based offline proxy instead of ONNX:** ONNX integration requires Android device. Browser-based simulation using a simple threshold rule (if cognitive_score < cutoff → High) is sufficient to demonstrate the offline logic concept.
+
+### Risk of Delay
+- Streamlit multi-page navigation with session state is brittle; state may reset on page transitions
+- **Mitigation:** Use `st.navigation()` (Streamlit 1.30+) or single-page tabs to avoid session state loss. Test multi-page flow end-to-end before Phase 4.
+
+---
+
+## Build Phase 4 – Governance Simulation & Compliance Layer
+
+### Objectives
+- Produce all governance artefacts needed for submission and Demo Day.
+- Ensure every claim in the documentation has a live demonstration point in the tool.
+- This phase is about hardening the narrative, not adding features.
+
+### Engineer A Tasks
+1. Finalise and format `model_card_v1.md` (render as Streamlit page or PDF)
+2. Finalise `bias_report_v1.md` with actual computed metrics from Phase 1
+3. Write `retraining_recommendation.md`: what triggers retraining, what data is needed, who approves
+4. Produce calibration chart and FNR table as static artefacts for submission package
+5. Write `shadow_mode_protocol.md` (1-page; distilled from full document): what happens before live activation
+
+### Engineer B Tasks
+1. Build "About This System" Streamlit page: displays model card summary, explainability methodology, screening-only disclaimer, DPDP compliance statement, government ownership statement
+2. Build "Audit Trail" Streamlit page: reads and displays decision trace log in tabular form; CSV export button
+3. Produce DPDP compliance one-pager (markdown → PDF): consent, retention, breach plan, ownership — each mapped to a system control
+4. Prepare demo script: 10-minute walkthrough narrative with exact click-path and talking points for each screen
+5. Record or screenshot all demo screens for submission package
+
+### Deliverables
+- "About This System" page functional in app
+- "Audit Trail" page displaying decision trace log
+- `model_card_v1.md` — finalised, formatted
+- `bias_report_v1.md` — finalised with real metrics
+- `dpdp_compliance_onepager.pdf`
+- `demo_script.md` — exact 10-minute click-path with talking points
+- Screenshots of all 6 key screens
+
+### Validation Criteria
+- Every claim in the submission write-up has a corresponding screen or document in the submission package
+- Model card shows real metrics (not placeholder text)
+- DPDP one-pager maps every requirement to a named control
+- Demo script runs in ≤ 10 minutes without hesitation on first dry-run
+
+### Risk of Delay
+- Governance documentation quality is lower priority and gets deprioritised
+- **Mitigation:** Engineer B owns all governance documents from Phase 1. They are written incrementally, not in one sitting. By Phase 4, only formatting and finalisation remain.
+
+---
+
+## Build Phase 5 – Stabilisation & Demo Hardening
+
+### Objectives
+- Eliminate all crashes, UI inconsistencies, and data integrity gaps before Demo Day.
+- Freeze the codebase. No new features.
+- Produce the submission package.
+
+### Both Engineers
+1. Full end-to-end demo run: AWW consent → screening → risk result → Supervisor view → trajectory chart → audit trail. Fix all blockers.
+2. Data integrity check: all 50 demo children have correct records; no null tiers; all trajectories computed
+3. Edge case testing: child with one time point (no trajectory possible — must show graceful message); Low-tier child (no referral widget should appear); offline mode toggle (must not crash)
+4. Remove all debug output, `st.write()` test calls, `print()` statements
+5. Lock Python dependency versions: generate `requirements.txt` with exact pinned versions
+6. Create `README.md`: setup instructions (3 commands to run), data reset instructions, demo walkthrough link
+7. Produce submission package (see Section F)
+
+### Deliverables
+- Zero-crash end-to-end demo run verified by both engineers independently
+- Pinned `requirements.txt`
+- `README.md` with setup instructions
+- Complete submission package (all artefacts listed in Section F)
+
+### Validation Criteria
+- Both engineers independently complete full demo run without assistance
+- No crashes on any of the defined edge cases
+- App loads from cold start in ≤ 15 seconds on demo machine
+- All submission artefacts present and named correctly
+
+---
+
+# Section C – MVP Component Classification
+
+| # | Component | Classification | Phase Built |
+|---|---|---|---|
+| 1 | Multi-domain risk engine (XGBoost/LightGBM) | **Build Now** | Phase 1 |
+| 2 | SHAP explainability (top-3 plain-language) | **Build Now** | Phase 1 |
+| 3 | Probability calibration + ECE metric | **Build Now** | Phase 1 |
+| 4 | FNR monitoring + asymmetric threshold | **Build Now** | Phase 1 |
+| 5 | Synthetic dataset + training pipeline | **Build Now** | Phase 1 |
+| 6 | Developmental trajectory engine | **Build Now** | Phase 2 |
+| 7 | Risk transition detection + logging | **Build Now** | Phase 2 |
+| 8 | Cohort impact metrics (coverage, tier dist.) | **Build Now** | Phase 2 |
+| 9 | AWW screening form (Streamlit) | **Build Now** | Phase 1 |
+| 10 | Supervisor block dashboard | **Build Now** | Phase 2 |
+| 11 | Consent capture screen | **Build Now** | Phase 3 |
+| 12 | Decision trace log (structured) | **Build Now** | Phase 3 |
+| 13 | Role-scoped data views (AWW/Supervisor) | **Build Now** | Phase 3 |
+| 14 | Offline simulation toggle | **Simulate** | Phase 3 |
+| 15 | PHC referral outcome capture | **Simulate** | Phase 4 (fixture data) |
+| 16 | Sync conflict resolution | **Simulate** | Phase 4 (narrative + demo button) |
+| 17 | CDPO / State dashboard | **Simulate** | Phase 4 (static chart) |
+| 18 | Android Kotlin app | **Defer to Phase 2** | Post-shortlisting |
+| 19 | PostgreSQL + TimescaleDB | **Defer to Phase 2** | Post-shortlisting |
+| 20 | Keycloak RBAC / OAuth2 | **Defer to Phase 2** | Post-shortlisting |
+| 21 | Kubernetes deployment | **Defer to Phase 2** | Post-shortlisting |
+| 22 | Full audit chain (cryptographic) | **Defer to Phase 2** | Post-shortlisting |
+| 23 | Penetration testing | **Defer to Phase 2** | Phase 6 |
+| 24 | MLflow experiment registry (server) | **Defer to Phase 2** | Phase 6 |
+| 25 | FCM push notifications | **Defer to Phase 2** | Post-shortlisting |
+
+---
+
+# Section D – Required Technical Simplifications
+
+## D.1 SQLite instead of PostgreSQL + TimescaleDB
+
+**Simplification:** All data is stored in a single SQLite file (`demo.db`). Schema is identical to the production PostgreSQL schema (same column names, types, constraints). Only the connection layer differs.
+
+**Acceptable because:** SQLite handles 50–500 records trivially. The risk engine and trajectory logic operate on Python objects, not database-native functions. Migration to PostgreSQL is a connection-string change + Alembic migration; no logic changes required.
+
+**Demo claim:** *"The production schema is defined. PostgreSQL with TimescaleDB is the target deployment database. For this prototype we use an identical schema in SQLite to keep the setup dependency-free."*
+
+---
+
+## D.2 Streamlit instead of React Web App + Android App
+
+**Simplification:** All dashboard views (AWW form, Supervisor dashboard, Audit Trail, About) are implemented in Streamlit (Python). The Android application and React web dashboards are documented in architecture but not implemented.
+
+**Acceptable because:** Streamlit allows functional demonstration of all data flows, role views, offline simulation, and governance screens. Evaluators are assessing logic and governance, not UI framework choice. Post-shortlisting, the Streamlit screens become the functional specification for the React/Android implementation.
+
+**Demo claim:** *"The production interface is Kotlin/Android for AWW and React for web dashboards. This prototype uses Streamlit as a functional proxy — all data flows, role scoping, and governance logic are implemented. The production UI specification is included in our documentation."*
+
+---
+
+## D.3 Structured Decision Trace Log instead of Cryptographic Audit Chain
+
+**Simplification:** Each risk computation writes a structured Python dict to a `decision_trace` table in SQLite. Fields: `{log_id, timestamp, session_role, child_id, assessment_id, tier, top_shap_feature, shap_value, is_provisional, action_taken}`. No hash chaining.
+
+**Acceptable because:** The evaluation is assessing audit capability and governance intent. The production cryptographic chaining mechanism is documented in [ecd_system_architecture.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_system_architecture.md) (audit_log schema with `previous_log_hash` and `log_entry_hash`). The demo log proves the system records every decision. Cryptographic integrity is a production hardening step.
+
+**Demo claim:** *"Every risk computation and action is logged with a structured trace. Production deployment uses cryptographic audit chaining — the schema and chaining algorithm are documented. For this prototype, structured logging demonstrates the governance intent."*
+
+---
+
+## D.4 Manual Version Freeze instead of CI/CD Pipeline
+
+**Simplification:** No automated testing pipeline. Engineers manually run a test suite (`pytest tests/`) before final submission. A `requirements.txt` with pinned versions replaces Docker image builds. A `CHANGELOG.md` replaces automated release notes.
+
+**Acceptable because:** CI/CD is an operational practice, not a system capability being evaluated. The test suite still exists. The pinned `requirements.txt` ensures environment reproducibility. The evaluation committee does not run your CI/CD — they run your demo.
+
+**Demo claim:** *"Production deployment includes automated CI/CD with container scanning and pre-deployment test gates — documented in our DevOps specification. For the prototype, we use manual validation with a pinned dependency file and documented test coverage."*
+
+---
+
+## D.5 Streamlit Session State instead of JWT Authentication
+
+**Simplification:** A sidebar dropdown (`Select Role: AWW / Supervisor`) sets `st.session_state.role`. Data queries are filtered based on this value. No JWT tokens, Keycloak, or session management.
+
+**Acceptable because:** The logical separation between roles (what each role can see and do) is identical to the production RBAC design. The enforcement mechanism is simplified. The production Keycloak RBAC configuration is documented as a deliverable.
+
+**Demo claim:** *"Role-based access control in production is enforced via Keycloak with JWT tokens — the role configuration and permission matrix are documented. In this prototype, role logic is implemented with correct data scoping, demonstrating that the boundaries are correctly designed."*
+
+---
+
+## D.6 Rule-Based Offline Proxy instead of ONNX on Android
+
+**Simplification:** When `offline_mode = True` in the Streamlit demo, the system uses a simple threshold function (not a quantized ONNX model) to produce a provisional risk tier: if the sum of indicator risk flags exceeds a domain-specific threshold, the tier escalates. This is clearly labelled `PROVISIONAL` in the UI.
+
+**Acceptable because:** The ONNX deployment architecture is documented (quantization method, parity test criteria, Android runtime). The conceptual demonstration — "the device can produce a risk estimate without connectivity" — is fully achieved. The specific inference engine is an implementation detail.
+
+**Demo claim:** *"On-device inference in production uses a quantized ONNX model deployed via Android WorkManager — architecture and parity test criteria are documented. In this prototype, the offline mode uses a threshold-based proxy to demonstrate the provisional-vs-canonical result flow without requiring an Android device."*
+
+---
+
+# Section E – Evaluation Alignment Protection
+
+## E.1 95%+ Accuracy Threshold
+
+**Requirement:** PoC Success Criteria requires "models with more than 95% accuracy."
+
+**How to handle:**
+- Do not report raw accuracy on a 4-class imbalanced problem. This will be misleading.
+- Report and present: **Balanced Accuracy**, **High-Risk Recall (Sensitivity)**, **AUC-ROC**.
+- If balanced accuracy ≥ 0.80 and High/Critical recall ≥ 0.85, your system is defensible.
+- Prepare a 2-sentence explanation for evaluators: *"Raw accuracy on an imbalanced developmental screening dataset would be inflated by the majority Low-risk class. We report balanced accuracy and high-risk recall, which are the clinically meaningful metrics for this population."*
+- Include this framing explicitly in the model card and the submission write-up.
+
+> [!CAUTION]
+> Do NOT claim 95% accuracy unless your balanced accuracy on the held-out test genuinely reaches that level. Evaluators will probe this. A defensible 82% balanced accuracy with 91% Critical recall is stronger than a claimed 95% raw accuracy that collapses under scrutiny.
+
+---
+
+## E.2 High-Risk Recall Emphasis
+
+- Set the decision threshold for High and Critical tiers to prioritise sensitivity over specificity.
+- Show the threshold sensitivity analysis chart in the submission: "At threshold X, recall = Y, precision = Z."
+- In the demo, show the AWW receiving a Critical-tier alert for a pre-seeded child and being required to create a referral. This is the most powerful demo moment.
+- Have the FNR figure for Critical tier ready to state verbally: *"Our system's false-negative rate for Critical-tier children is [X]%. That means [X]% of children who should have been flagged were not. We've set a 12% alert threshold with a documented rollback policy."*
+
+---
+
+## E.3 Longitudinal Impact Demonstration (40% Evaluation Weight)
+
+This is the highest-weight dimension. Do not underinvest here.
+
+- Demo must show at least one child moving from Medium to Critical over two time points.
+- The trajectory chart must be visible and clearly annotated (risk transition marker).
+- The cohort panel must show that the block with this child has a higher risk distribution than the control block.
+- Prepare the line: *"Within a 6-month simulated cohort of 50 children, [X] showed risk tier deterioration. Our system detected these transitions automatically, enabling targeted supervisor review before the next fieldwork cycle."*
+- Have the developmental coefficient number ready: *"Child ID [X] shows a cognitive developmental coefficient of [−0.8 SD], meaning they are tracking 0.8 standard deviations below their age cohort mean — this triggered automatic escalation."*
+
+---
+
+## E.4 Screening-Level Boundary
+
+- The disclaimer must appear on every risk result screen, in the colour-code border: *"This is a developmental screening flag, not a clinical diagnosis. All High and Critical flags require supervisor review and referral to a qualified health professional."*
+- The referral widget must be the visual proof of this boundary: the system does not act — the AWW acts.
+- If asked: *"Where does the AI make the decision?"* — the answer is: *"The AI makes no decision. It produces a probability-calibrated risk tier. The AWW must select an action. The Supervisor confirms referrals. The system is a decision support layer, not a decision-making system."*
+
+---
+
+## E.5 DPDP Compliance Narrative
+
+Three specific points to demonstrate in the demo:
+1. **Consent first:** Show that the AWW cannot submit an assessment without completing the consent form for that child. This is enforced in the UI flow.
+2. **Minimal data:** Show the indicator list. Every field has a one-line justification in the Data Dictionary. *"We collect only what is necessary for screening. The data minimisation audit is in our documentation."*
+3. **Government ownership:** Show the "About This System" page. The data ownership statement reads: *"All data is stored on government-controlled infrastructure. The vendor has no access to child data. The system is designed for full government ownership at handover."* This is a 5-second display moment that registers strongly with evaluators.
+
+---
+
+## E.6 Government Ownership Positioning
+
+- In the demo and Q&A, use the phrase *"government-controlled infrastructure"* not *"our servers."*
+- When asked about hosting: *"The target deployment environment is NIC Data Centre or State Data Centre — whichever the state government designates. We have no proprietary lock-in. The deployment stack is fully documented in our infrastructure specification."*
+- Point to the architecture document if pressed: it includes the DB schema, API structure, and Docker Compose starting configuration.
+
+---
+
+# Section F – Verification & Review Checklist
+
+## F.1 Pre-Submission Validation Checklist
+
+### Functional
+- [ ] AWW screening form: accepts full record, validates age-band, returns risk tier — tested with 5 different children
+- [ ] Risk result shows tier badge + top-3 SHAP labels + disclaimer text — verified for all 4 tier levels
+- [ ] Disclaimer text on every result screen — visual check each screen
+- [ ] Supervisor dashboard: loads all 50 demo children; sortable; referral flags visible — confirmed
+- [ ] Trajectory chart: renders correctly for children with 1 time point (graceful message) and 2+ time points (chart) — tested both
+- [ ] Risk transition: Medium→Critical transition correctly annotated on trajectory chart — confirmed
+- [ ] Cohort panel: tier distribution bar chart correct vs. actual DB records — spot-checked 10 records
+- [ ] Consent form: record written to DB; consent field required before assessment — confirmed
+- [ ] Decision trace log: one entry per risk computation; correct fields — confirmed for 5 test runs
+- [ ] Offline simulation: toggle disables DB calls; provisional tier returned; SHAP placeholder shown — confirmed
+- [ ] Referral widget: appears on High/Critical; blocks navigation until action selected — confirmed on Critical test child
+- [ ] Role scoping: AWW session cannot query Supervisor-scope children — confirmed with query inspection
+
+### Data Integrity
+- [ ] All 50 demo children have at least 1 assessment and 1 risk result — SELECT COUNT verified
+- [ ] All 10 trajectory demo children have ≥ 2 time points — verified
+- [ ] 3 pre-seeded demo trajectories (stable, improving, deteriorating) render as expected — visual check
+- [ ] No null tiers in `risk_results` table — `SELECT COUNT(*) WHERE overall_tier IS NULL = 0`
+- [ ] Consent records exist for all 50 demo children — verified
+
+### Documentation
+- [ ] `model_card_v1.md` contains real metric values (not placeholder text) — reviewed
+- [ ] `bias_report_v1.md` contains disaggregated AUC and FNR by gender — reviewed
+- [ ] Calibration plot PNG generated from actual model output — confirmed
+- [ ] DPDP compliance one-pager maps every requirement to a control — reviewed
+
+---
+
+## F.2 Demo-Day Stability Checklist
+
+- [ ] Fresh install test: `git clone → pip install -r requirements.txt → streamlit run app.py` — works on a clean environment
+- [ ] App loads from cold start in ≤ 15 seconds — timed
+- [ ] Demo machine has pinned Python version (3.11.x) matching `requirements.txt`
+- [ ] `demo.db` is seeded and committed to repo (or `seed_demo_db.py` runs without errors in ≤ 10 seconds)
+- [ ] No error messages or stack traces visible in any demo flow — confirmed
+- [ ] Both engineers have independently completed the full demo run without assistance — confirmed
+- [ ] Demo machine does not require internet connectivity during demo (all assets local) — confirmed
+- [ ] Backup demo machine prepared with identical setup — confirmed
+- [ ] Browser tab has demo open and pre-navigated to AWW screening form at start of demo
+
+---
+
+## F.3 Likely Expert Review Questions & Prepared Answers
+
+| Question | Prepared Answer |
+|---|---|
+| "What is your model's accuracy?" | "Balanced accuracy is [X]% on our synthetic held-out test set. High-risk recall is [Y]%, meaning [Y]% of children who needed flagging were identified. Full metrics are in our model card." |
+| "How do you handle false negatives?" | "We set an asymmetric decision threshold favouring recall for High and Critical tiers. A 12% FNR alert threshold is documented with a model rollback policy. The FNR on our test set is [X]%." |
+| "Is this a diagnosis tool?" | "No. It is a screening-level decision support tool. The system cannot and does not produce a clinical diagnosis. Every result shows an explicit disclaimer. The AWW must take an action; the system does not act autonomously." |
+| "What happens after a child is flagged?" | "The AWW must select a referral action before the screen can be dismissed. The referral is logged. In the target architecture, the PHC outcome is captured to provide ground-truth labels for model retraining. The full referral feedback loop is documented." |
+| "Where is the data stored?" | "On government-controlled infrastructure. In production, NIC or State Data Centre. In this prototype, a local SQLite file that would be replaced by PostgreSQL on the government server. No data leaves the government network." |
+| "How does this work offline?" | "The Android app — documented in our architecture — uses a quantized ONNX model stored on-device to produce a provisional risk tier without connectivity. In this prototype, we demonstrate the offline logic with a simulation. The full ONNX deployment specification is in our architecture document." |
+| "Who has access to the data?" | "Access is role-scoped. AWWs see only their anganwadi's children. Supervisors see their block. CDPOs see their district. In production, this is enforced via Keycloak RBAC. In this prototype, the scoping logic is implemented via query filters." |
+| "How do you ensure the model doesn't discriminate?" | "We run disaggregated metrics by gender and geography. The bias report is in our submission. We've documented a retraining trigger if performance disparity across groups exceeds 5%. Current synthetic-data results show no significant disparity — [cite figures from bias report]." |
+| "How do you know the model will work on real data?" | "We don't yet — and we say so explicitly. Our model is trained on validated synthetic data. We've designed a Shadow Deployment Mode: the model runs silently on real data for 4 weeks before results are shown to AWWs, with a government sign-off gate before activation. The protocol is documented." |
+| "What is the 5-year plan?" | "Phase 8 of our development plan covers the full 5-year O&M lifecycle: annual retraining, security audits, technology refresh, and government knowledge transfer. The plan includes a cost model at approximately ₹1.41 per child screened per year at full scale." |
+
+---
+
+## F.4 Required Submission Artifacts
+
+### Code Repository (GitHub / submission portal)
+- [ ] `app.py` — main Streamlit application entry point
+- [ ] `risk_engine.py` — model training, calibration, SHAP
+- [ ] `trajectory_engine.py` — developmental coefficient, transition detection
+- [ ] `cohort_aggregator.py` — block/district impact metrics
+- [ ] `synthetic_data_generator.py` — reproducible dataset generation
+- [ ] `seed_demo_db.py` — demo database seeder
+- [ ] `decision_trace.py` — structured decision log
+- [ ] `tests/` — pytest unit tests for all 3 core engines
+- [ ] `requirements.txt` — pinned versions
+- [ ] `README.md` — 3-command setup, demo instructions
+
+### Documentation Package
+- [ ] `model_card_v1.md` — with real metrics
+- [ ] `bias_report_v1.md` — with disaggregated metrics
+- [ ] `calibration_plot.png` — reliability diagram from actual model
+- [ ] `dpdp_compliance_onepager.pdf`
+- [ ] [ecd_system_architecture.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_system_architecture.md) — full target state architecture
+- [ ] [ecd_development_phases.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_development_phases.md) — full phase plan (Phase 0–8)
+- [ ] [ecd_gap_closure.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_gap_closure.md) — PHC loop, shadow mode, HITL policy, cost model
+
+### Demo Materials
+- [ ] `demo_script.md` — 10-minute click-path with talking points
+- [ ] Screenshots of all 6 key screens (AWW form, risk result, Supervisor dashboard, trajectory chart, consent, audit trail)
+- [ ] `video_walkthrough.mp4` (if permitted by submission portal) — 3-minute silent walkthrough
+
+> [!NOTE]
+> The architecture documents ([ecd_system_architecture.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_system_architecture.md), [ecd_development_phases.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_development_phases.md), [ecd_gap_closure.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_gap_closure.md)) are your most powerful submission differentiators. They demonstrate that you have designed a production-ready system, not just a demo. Attach them as Part 2 of the submission under "Technical Design Documentation."

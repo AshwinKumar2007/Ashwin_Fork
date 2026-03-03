@@ -1,0 +1,501 @@
+# Section B – Development Phases
+## AI-Based ECD Decision Support Layer for India
+
+---
+
+## Phase Overview
+
+| Phase | Name | Estimated Duration | Key Output |
+|---|---|---|---|
+| **0** | **Shadow Deployment** | **4 weeks (concurrent with Pilot prep)** | **Real-world distribution baseline, activation gate** |
+| 1 | Research & Data Modeling | 8–12 weeks | Data schema, indicator framework, consent model |
+| 2 | Risk Engine Development | 10–14 weeks | Trained, calibrated, explainable risk model |
+| 3 | Trajectory & Impact Layer | 8–10 weeks | Longitudinal tracking service, cohort metrics |
+| 4 | Dashboard Layer | 8–10 weeks | Role-specific web dashboards |
+| 5 | Offline Client & Sync Layer | 10–14 weeks | Android app with offline-first capability |
+| 6 | Security & Compliance Hardening | 6–8 weeks | DPDP-compliant, pen-tested system |
+| 7 | Pilot Deployment (PoC) | 8–12 weeks | Working pilot in 1–2 blocks/districts |
+| 8 | Production Scaling & 5-Year O&M | Ongoing (60 months) | Full deployment + operations roadmap |
+
+**Total estimated time to Pilot:** ~58–80 weeks (14–20 months), depending on team size and data readiness. Phase 0 runs during the final 4 weeks of Phase 6 / start of Phase 7 — it is not sequential overhead.
+
+---
+
+## Phase 0 – Shadow Deployment Mode
+
+> Run concurrently with the final 4 weeks of Phase 6. The model operates on real data silently. Outputs are not shown to AWWs. Purpose: validate real-world distribution before activating risk outputs. Full specification in [ecd_gap_closure.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_gap_closure.md) Gap 2.
+
+### Objectives
+1. Confirm model produces sensible probability distributions on real (not synthetic) data before influencing decisions.
+2. Detect distribution shift (PSI metric) between synthetic training distribution and real-world data.
+3. Recalibrate probability thresholds if real-world distribution differs from synthetic.
+4. Produce government-approved sign-off for system activation.
+
+### Deliverables
+- D0.1 Shadow mode system configuration (`shadow_mode = TRUE` flag + admin toggle endpoint)
+- D0.2 Shadow results stored with `result_status = 'SHADOW'` in `risk_results` table
+- D0.3 Shadow period analysis report: distribution comparison, PSI score, tier proportions
+- D0.4 Threshold recalibration document (if PSI > 0.20)
+- D0.5 Government programme officer activation sign-off form
+
+### Technical Stack
+- FastAPI system config endpoint (admin-only toggle for `shadow_mode`)
+- Python analysis script (PSI computation, calibration curve comparison)
+- Existing PostgreSQL `risk_results` table with `result_status` field
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Real-world data quality too low to compute reliable PSI | High | Medium | Set minimum data quality threshold (≥ 0.6 score) per record before including in shadow analysis |
+| Shadow period too short for statistical validity | Medium | Medium | Minimum 200 assessments before activation evaluation; extend period if AWW onboarding is slow |
+| Government sign-off delayed | Medium | Medium | Prepare activation report template in advance; include sign-off in Phase 6 governance checklist |
+
+### Validation Criteria
+- Shadow mode flag toggleable without deployment (config-level change only)
+- Minimum 200 real assessments collected and scored in shadow mode
+- PSI ≤ 0.25 between synthetic training distribution and shadow-period distribution
+- Critical-tier proportion ≤ 15% of total shadow assessments (alert fatigue check)
+- Domain expert reviews shadow-period tier distribution and judges plausible
+
+### Exit Checklist (Activation Gate)
+- [ ] ≥ 200 shadow assessments collected
+- [ ] PSI ≤ 0.25 confirmed
+- [ ] Threshold recalibration completed and documented (if required)
+- [ ] Critical-tier proportion within acceptable range
+- [ ] Government programme officer has signed activation form
+- [ ] `shadow_mode` flag set to `FALSE` in production config
+- [ ] Audit log records activation event with approving officer ID
+
+---
+
+## Phase 1 – Research & Data Modeling
+
+### Objectives
+1. Establish the developmental indicator framework aligned with ICDS/iCDS-CAS data fields and validated ECD screening tools (e.g., DASII, VSMS, WHO Motor Milestone Scales).
+2. Define the data schema, data dictionary, and data minimisation strategy in line with DPDP Act 2023.
+3. Establish government data governance protocols, including data ownership agreements and consent model.
+4. Map existing ICDS-CAS API fields to the proposed schema to determine integration pathway.
+5. Recruit and onboard data science, domain, and legal/compliance co-investigators.
+
+### Deliverables
+- D1.1 Indicator Framework Document (cognitive, motor, socio-emotional per age band)
+- D1.2 Data Dictionary (all fields, types, permissible values, DPDP category classification)
+- D1.3 Consent Model Specification (who, what, how, revocation mechanism)
+- D1.4 Data Minimisation Audit (field-level justification for each data point collected)
+- D1.5 ICDS-CAS Integration Mapping Document
+- D1.6 IRB/Ethics clearance application (if pilot involves human subjects data collection)
+- D1.7 Government Data Ownership Agreement template
+- D1.8 PostgreSQL + TimescaleDB schema v1.0 (scripts + ER diagram)
+
+### Technical Stack
+- PostgreSQL 15+, TimescaleDB 2.x, DBngin or equivalent for local dev
+- Python 3.11+ for schema migration scripts (Alembic)
+- YAML/JSON for data dictionary tooling
+- Git + internal repository server (NIC GitLab equivalent)
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Existing ICDS-CAS data insufficient quality for model training | High | High | Plan synthetic data augmentation; request historical anonymised datasets early |
+| IRB/ethics clearance delays | Medium | High | File application at Phase 1 start; prepare dual-track (synthetic data path) |
+| Stakeholder misalignment on indicator set | Medium | Medium | Lock indicator framework with domain experts before Phase 2 |
+| DPDP Act interpretation ambiguity | Medium | High | Engage legal counsel with public health data expertise |
+
+### Validation Criteria
+- Indicator framework reviewed and signed off by at least 2 ECD domain experts (paediatric/developmental)
+- Data dictionary covers 100% of fields with DPDP category classification
+- Consent model reviewed by legal officer and approved by government counterpart
+- Database schema passes SQL-level integrity tests (foreign keys, constraints, null checks)
+
+### Exit Checklist
+- [ ] Indicator framework signed off by domain experts
+- [ ] Data dictionary finalised and version-controlled
+- [ ] Consent model approved by government legal counterpart
+- [ ] DB schema v1.0 committed to repository with migration scripts
+- [ ] Ethics clearance application filed (or waiver obtained for synthetic-only phase)
+- [ ] ICDS-CAS integration mapping approved by ICDS programme team
+
+---
+
+## Phase 2 – Risk Engine Development
+
+### Objectives
+1. Build, train, and validate a multi-domain (Cognitive, Motor, Socio-Emotional) screening-level risk stratification model.
+2. Implement Explainable AI (SHAP-based feature contributions) for per-prediction transparency.
+3. Implement probability calibration (Platt Scaling or Isotonic Regression).
+4. Establish and monitor false-negative mitigation strategy for High/Critical tiers.
+5. Quantize and package model for on-device (ONNX) inference.
+6. Produce Model Card and Bias/Fairness Report.
+
+### Deliverables
+- D2.1 Training data pipeline (anonymised/synthetic data ingestion, preprocessing, feature engineering)
+- D2.2 Baseline model benchmarks (Logistic Regression, Decision Tree, XGBoost, LightGBM)
+- D2.3 Selected production model with hyperparameter tuning report
+- D2.4 Calibration analysis report (reliability diagrams per domain)
+- D2.5 SHAP explainability integration with top-N feature output
+- D2.6 False-negative analysis report (FNR per tier, threshold sensitivity analysis)
+- D2.7 ONNX quantized model artifact (server + mobile)
+- D2.8 Model Card v1.0 (intended use, limitations, training data characteristics)
+- D2.9 Bias & Fairness Report (performance disaggregated by gender, geography, socioeconomic proxy)
+
+### Technical Stack
+- Python 3.11+, Scikit-learn, XGBoost, LightGBM, SHAP
+- ONNX, ONNX Runtime, onnxmltools
+- MLflow (experiment tracking, artifact store)
+- Pandas, NumPy, Matplotlib/Seaborn (EDA and visualisation)
+- Pytest + pytest-cov (unit and integration tests for pipeline)
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Insufficient real-world training data | High | High | Use validated synthetic data generation; pre-register intent to update model post-pilot |
+| Model overfits to synthetic data distribution | Medium | High | Cross-validate on held-out synthetic cohort; flag for post-pilot retraining |
+| SHAP explanations not intelligible to AWW | Medium | Medium | Co-design explanation templates with field staff; simplify to top-3 plain-language factors |
+| High FNR for Critical tier | High | Critical | Set asymmetric decision threshold (higher sensitivity at Critical tier); document explicitly |
+| Model exhibits gender/geography bias | Medium | High | Stratified sampling during training; document in Bias Report; set retraining trigger if bias metric exceeds threshold |
+
+### Validation Criteria
+- Model AUC-ROC ≥ 0.80 per domain on held-out test set
+- Calibration: Expected Calibration Error (ECE) ≤ 0.05
+- Critical-tier FNR ≤ 10% (configurable per government requirement)
+- SHAP explanations validated as understandable by 2+ AWWs in cognitive walkthrough
+- ONNX model output within ±0.5% probability of Python model (numeric parity test)
+- Bias Report shows no statistically significant performance disparity across gender groups > 5%
+
+### Exit Checklist
+- [ ] Model AUC-ROC meets threshold per domain on test set
+- [ ] Calibration ECE ≤ 0.05
+- [ ] Critical-tier FNR documented and within approved threshold
+- [ ] SHAP integration tested end-to-end with API response
+- [ ] ONNX model deployed to test Android device; output parity verified
+- [ ] Model Card v1.0 drafted and reviewed by domain expert
+- [ ] Bias Report drafted and reviewed by government counterpart
+- [ ] MLflow experiment registry has complete run history
+
+---
+
+## Phase 3 – Trajectory & Impact Layer
+
+### Objectives
+1. Build the Developmental Trajectory Engine to compute longitudinal developmental coefficients per child.
+2. Implement risk transition logic (e.g., Low→High between screening intervals).
+3. Implement cohort-level impact metrics for block/district/state aggregation.
+4. Expose trajectory data through the API for dashboard consumption.
+
+### Deliverables
+- D3.1 Trajectory Engine service (Python microservice or integrated FastAPI module)
+- D3.2 TimescaleDB hypertable schema and partitioning configuration
+- D3.3 Developmental coefficient calculation methodology document
+- D3.4 Risk transition event table and alerting triggers
+- D3.5 Cohort aggregation batch job (Celery + SQL)
+- D3.6 Trajectory API endpoints (documented with OpenAPI spec)
+
+### Technical Stack
+- Python 3.11+, FastAPI, TimescaleDB 2.x, SQLAlchemy (async), Celery, Redis
+- Pandas, NumPy for coefficient computation
+- Alembic for schema migrations
+- Pytest for service-level unit and integration tests
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Sparse longitudinal data (children screened only once) | High | Medium | Trajectory engine handles single time-point gracefully; flags as insufficient for trajectory |
+| TimescaleDB performance under high write volume | Low | Medium | Tune chunk intervals; implement write buffer via async queue |
+| Coefficient definition contested by domain experts | Medium | Medium | Define coefficient as standardised score relative to age-cohort; pre-agree with domain partners |
+
+### Validation Criteria
+- Trajectory computed correctly for simulated 12-month longitudinal cohort (500 children)
+- Risk transition events detected accurately (unit tested with known before/after scenarios)
+- Cohort aggregation query completes in ≤ 5 seconds for district-scale 10,000-child dataset
+- API endpoints return correct trajectory data; documented in OpenAPI spec
+
+### Exit Checklist
+- [ ] Trajectory Engine service passes all unit and integration tests
+- [ ] Coefficient methodology approved by domain expert
+- [ ] Risk transition events correctly logged and queryable
+- [ ] Cohort batch job completes within SLA on load test dataset
+- [ ] OpenAPI spec generated and committed to repository
+
+---
+
+## Phase 4 – Dashboard Layer
+
+### Objectives
+1. Build role-specific dashboards: AWW (Android embedded), Supervisor (web), CDPO (web), State (web), Audit Log Console.
+2. Implement RBAC-enforced data scoping (AWW sees own anganwadi only; Supervisor sees block; etc.).
+3. Implement referral action workflow for AWW (mark child for referral, record follow-up).
+4. Implement alert/notification system for new High/Critical risk flags.
+
+### Deliverables
+- D4.1 AWW dashboard embedded in Android App (child list, risk flags, referral screen)
+- D4.2 Supervisor web dashboard (React)
+- D4.3 CDPO web dashboard (React)
+- D4.4 State analytics dashboard (React + Metabase/Apache Superset integration)
+- D4.5 Audit Log Console (React admin panel)
+- D4.6 Notification service (FCM for Android push; email digest for web users)
+- D4.7 UI/UX accessibility audit report (WCAG 2.1 AA compliance)
+
+### Technical Stack
+- React 18+ (TypeScript), TailwindCSS, Recharts/Nivo for charts
+- Kotlin (Android) for AWW embedded dashboard
+- FastAPI for dashboard API endpoints
+- Apache Superset or Metabase (open-source, on-prem) for state-level BI
+- Firebase Cloud Messaging (FCM) for Android push notifications (or on-prem alternative via APNS/FCM-parity server)
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| AWW literacy levels make complex UI unusable | High | High | Conduct HCD (Human-Centred Design) sessions with AWWs; use icon-driven UI, minimal text |
+| State dashboard too complex for CDPO adoption | Medium | Medium | Provide default views with export-to-Excel; minimise configuration burden |
+| FCM dependency on Google services | Low | Medium | Evaluate on-prem push alternative (ntfy, Unified Push) for air-gapped environments |
+| Accessibility standards not met | Medium | Low | Include accessibility audit in Phase 6; fix before Phase 7 pilot |
+
+### Validation Criteria
+- All dashboards pass RBAC tests (cross-role data isolation confirmed)
+- AWW dashboard usability tested with ≥ 5 real AWWs and System Usability Scale (SUS) score ≥ 70
+- Supervisor/CDPO dashboards load within 3 seconds at P95 for district-scale data
+- Notification delivery tested end-to-end (FCM to device)
+
+### Exit Checklist
+- [ ] RBAC data scoping verified for all 5 dashboard roles
+- [ ] AWW dashboard SUS score ≥ 70 in usability test
+- [ ] All API endpoints backing dashboards load within 3s SLA
+- [ ] Audit Log Console displays and exports correctly
+- [ ] Notification system tested end-to-end
+
+---
+
+## Phase 5 – Offline Client & Sync Layer
+
+### Objectives
+1. Implement fully offline-capable Android app with local SQLCipher-encrypted storage.
+2. Implement on-device ONNX risk engine for provisional risk output without connectivity.
+3. Implement sync queue with exponential backoff and conflict resolution.
+4. Implement server-side Sync Conflict Manager service.
+5. Test sync under degraded network conditions (2G, intermittent, zero connectivity).
+
+### Deliverables
+- D5.1 Android App v1.0 (Kotlin, full offline capability)
+- D5.2 SQLCipher local database schema (matching server schema subset)
+- D5.3 On-device ONNX risk inference module with output parity tests
+- D5.4 WorkManager-based sync orchestrator
+- D5.5 Client-side conflict resolver (field-level merge + version vector logic)
+- D5.6 Server-side Sync Conflict Manager service
+- D5.7 Sync failure and recovery test report (simulated poor connectivity)
+- D5.8 Sync protocol specification document
+
+### Technical Stack
+- Kotlin, Jetpack Compose, Android WorkManager, Room + SQLCipher
+- ONNX Runtime Android library
+- OkHttp for network calls; Retrofit for REST client
+- Hilt for dependency injection
+- JUnit 5, Espresso, Robolectric for Android testing
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| ONNX model too large for low-end devices (2GB RAM) | Medium | High | Quantize to INT8; benchmark on Redmi 6A (512MB RAM floor target) |
+| SQLCipher performance degradation on old devices | Medium | Medium | Profile on target device tier; consider selective field encryption |
+| Conflict resolution produces data inconsistencies | Medium | High | Extensive unit tests for merge logic; server always authoritative for risk recalculation |
+| Battery drain from background sync | Medium | Low | Use WorkManager constraints (charging, unmetered network options configurable) |
+
+### Validation Criteria
+- App functions fully offline for ≥ 72 hours with 50 child records without data loss
+- ONNX model inference results within ±1% of server model on test set
+- Sync completes successfully after 72-hour offline period with 200 queued records
+- Conflict resolution handles all defined conflict scenarios without data corruption
+- App runs on Android API 23+ (Android 6.0); tested on minimum-spec device
+
+### Exit Checklist
+- [ ] Offline data persistence verified (72-hour test, 50 records, no data loss)
+- [ ] ONNX inference parity confirmed on device
+- [ ] Sync recovery test passed (72h offline, 200 records)
+- [ ] All conflict scenarios in spec pass unit tests
+- [ ] App profiled for memory and battery on target device class
+- [ ] APK signed with government-issued certificate
+
+---
+
+## Phase 6 – Security & Compliance Hardening
+
+### Objectives
+1. Conduct penetration testing (web app, Android app, API).
+2. Implement DPDP Act 2023 compliance controls (consent lifecycle, data subject rights, DPO appointment support).
+3. Implement encryption at rest and in transit for all components.
+4. Implement and test RBAC boundary controls.
+5. Harden server infrastructure (OS hardening, firewall rules, secret management).
+6. Complete security audit documentation for government submission.
+
+### Deliverables
+- D6.1 Penetration Test Report (web + Android + API)
+- D6.2 Vulnerability Remediation Log
+- D6.3 DPDP Compliance Matrix (mapping each Act requirement to system control)
+- D6.4 Data Processing Agreement (DPA) template
+- D6.5 Encryption configuration documentation (TLS config, key management, certificate rotation schedule)
+- D6.6 RBAC policy configuration document (Keycloak role definitions)
+- D6.7 Server Infrastructure Hardening Checklist (CIS benchmark)
+- D6.8 Data Breach Response Plan (DPDP Chapter VII compliance)
+- D6.9 Privacy Impact Assessment (PIA)
+
+### Technical Stack
+- Keycloak 22+ (RBAC, OAuth2), HashiCorp Vault (secret management) or equivalent open-source
+- TLS 1.3 (nginx/Caddy as TLS termination), HSTS, OCSP stapling
+- Fail2ban, UFW/iptables (server hardening)
+- OWASP ZAP, Burp Suite Community (DAST), Trivy (container scanning)
+- OpenSSL for certificate management
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Penetration test reveals critical vulnerabilities close to pilot | Medium | High | Pen test in Phase 6 (not at pilot start); allocate buffer for remediation |
+| DPDP Act DPO requirement unfulfilled (if applicable) | Low | High | Engage legal team early; government entity may have different obligations |
+| TLS misconfiguration on government infrastructure | Medium | Medium | Use Mozilla SSL Configuration Generator; automated config audit (testssl.sh) |
+| Secret management immature (hardcoded credentials) | Medium | High | Automated secret scanning in CI/CD pipeline from Phase 2 onwards (gitleaks) |
+
+### Validation Criteria
+- Zero critical or high vulnerabilities in pen test report (or documented accepted-risk waiver)
+- DPDP Compliance Matrix maps 100% of Act requirements to controls
+- TLS configuration scores A+ on SSL Labs equivalent
+- RBAC boundary tests pass (no cross-role data access possible)
+- PIA completed and approved by government counterpart
+
+### Exit Checklist
+- [ ] Pen test report reviewed; all critical/high findings remediated and re-tested
+- [ ] DPDP Compliance Matrix finalised and approved
+- [ ] Encryption documentation reviewed by security officer
+- [ ] RBAC configuration tested with role-boundary penetration scenarios
+- [ ] Server hardening checklist completed (CIS benchmark Level 1 minimum)
+- [ ] Data Breach Response Plan signed off
+- [ ] PIA approved by government DPO/legal counterpart
+
+---
+
+## Phase 7 – Pilot Deployment (PoC)
+
+### Objectives
+1. Deploy system in 1–2 target blocks or districts (aligned with government pilot selection).
+2. Train AWWs, Supervisors, and CDPOs on system use.
+3. Collect and analyse real-world performance data (accuracy, usability, sync reliability).
+4. Run Minimum Viable Product (MVP) evaluation against success criteria.
+5. Document lessons learned for production scaling.
+
+### Deliverables
+- D7.1 Pilot Deployment Runbook
+- D7.2 Field Training Materials (AWW and Supervisor)
+- D7.3 Pilot Monitoring Dashboard (operational metrics: sync success rate, screening completion rate, risk tier distribution)
+- D7.4 AWW Feedback and Usability Assessment Report
+- D7.5 Pilot Performance Evaluation Report (model accuracy, FNR, coverage)
+- D7.6 Post-Pilot Retraining Recommendation (if drift detected)
+- D7.7 Lessons Learned Document
+- D7.8 Production Scaling Recommendation
+
+### Technical Stack
+- All Phase 1–6 components
+- Grafana + Prometheus (operational monitoring)
+- PgBouncer (connection pooling for PostgreSQL at pilot scale)
+- Docker + Kubernetes (K3s for lightweight government infrastructure) or Ansible-based VM deployment
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| AWW adoption resistance | High | High | Involve AWWs in co-design; ensure UI is genuinely helpful vs. burdensome |
+| Network connectivity worse than anticipated in pilot area | High | Medium | Offline mode is primary design; pilot in areas with ≤40% connectivity as stress test |
+| Model performance degrades on real data vs synthetic | High | High | Pre-register retraining plan; communicate provisional model status clearly |
+| Data quality issues (incorrect input by AWWs) | High | Medium | Implement validation constraints in app; field-level error messages for out-of-range inputs |
+| Government deployment environment differs from design assumptions | Medium | High | Conduct pre-pilot infrastructure audit; document environment requirements |
+
+### Validation Criteria
+- ≥ 80% of targeted AWWs in pilot block complete at least one screening
+- System Usability Scale (SUS) score ≥ 65 after real-world use
+- Sync success rate ≥ 95% across pilot duration
+- Model performance on real data: AUC-ROC ≥ 0.75 (lower threshold than synthetic, given distribution shift)
+- Zero data breaches or unauthorized access incidents during pilot
+
+### Exit Checklist
+- [ ] ≥ 80% AWW screening completion rate achieved
+- [ ] SUS score ≥ 65 in post-pilot survey
+- [ ] Sync success rate ≥ 95% over pilot duration
+- [ ] Model performance on real data meets minimum threshold
+- [ ] All critical bugs from pilot resolved
+- [ ] Post-Pilot Report submitted to government counterpart
+- [ ] Retraining recommendation (if needed) approved
+- [ ] Production scaling plan agreed with government
+
+---
+
+## Phase 8 – Production Scaling & 5-Year O&M Strategy
+
+### Objectives
+1. Scale to full state-level deployment (multiple districts/blocks).
+2. Establish operational processes for model monitoring, retraining, and version governance.
+3. Implement 5-year operational roadmap including capacity planning, staffing, and technology refresh.
+4. Establish SLA framework and incident management process.
+
+### Deliverables
+- D8.1 Production Deployment Architecture (Kubernetes, load balancing, DB clustering)
+- D8.2 Infrastructure Capacity Plan (compute, storage projection for 5 years)
+- D8.3 SLA Document (uptime ≥ 99.5% for API; definitions for P1/P2/P3 incidents)
+- D8.4 Model Governance Policy (drift thresholds, mandatory retraining triggers, approval authority)
+- D8.5 Annual Model Retraining Schedule
+- D8.6 Annual Security Audit Schedule
+- D8.7 Staffing Plan (Year 1–5: roles, FTE, government/vendor split)
+- D8.8 Technology Refresh Roadmap (dependency upgrades, hardware lifecycle)
+- D8.9 Disaster Recovery Plan (RTO ≤ 4 hours, RPO ≤ 1 hour)
+- D8.10 Knowledge Transfer Plan (to government technical team)
+
+### Technical Stack
+- Kubernetes (production-grade) on NIC/government cloud, or bare-metal with Rancher
+- PostgreSQL HA cluster (Patroni or Citus for sharding if required)
+- TimescaleDB multi-node (if volume exceeds single-node capacity)
+- Grafana + Prometheus + Alertmanager (full observability stack)
+- Airflow (model retraining orchestration), MLflow (model registry)
+- Ansible (infrastructure-as-code for government handover)
+- Velero (Kubernetes backup), pg_basebackup (PostgreSQL backup)
+
+### 5-Year O&M Roadmap
+
+| Year | Key Activities |
+|---|---|
+| Y1 | Production launch → state scale; monthly model monitoring; quarterly security review |
+| Y2 | First mandatory model retraining (post-12 months of real data); DPDP annual audit |
+| Y3 | Dashboard feature enhancements based on field feedback; infrastructure capacity review |
+| Y4 | Technology refresh (OS/framework upgrades); second retraining cycle |
+| Y5 | Full government knowledge transfer; 5-year security audit; system handover documentation |
+
+### Resource Estimation (Indicative)
+
+| Role | Phase 1–6 | Phase 7 (Pilot) | Phase 8 (Year 1) |
+|---|---|---|---|
+| ML Engineer | 2 FTE | 1 FTE | 1 FTE |
+| Backend Engineer | 2 FTE | 1 FTE | 1 FTE |
+| Android Developer | 1 FTE | 1 FTE | 0.5 FTE |
+| Frontend Engineer | 1 FTE | 0.5 FTE | 0.5 FTE |
+| DevOps/Infra Engineer | 1 FTE | 1 FTE | 1 FTE |
+| Security Engineer | 0.5 FTE | 0.5 FTE | 0.25 FTE |
+| ECD Domain Expert | 0.5 FTE | 0.5 FTE | 0.25 FTE |
+| Program/Govt Liaison | 0.5 FTE | 0.5 FTE | 0.5 FTE |
+| Legal/Compliance | 0.25 FTE | 0.25 FTE | 0.25 FTE |
+| **Total** | **~9 FTE** | **~6.25 FTE** | **~5.25 FTE** |
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Model drift as real-world data accumulates | High | High | Mandatory retraining every 12 months or when drift metric exceeds threshold |
+| Government IT turnover causing knowledge loss | Medium | High | Document all SOPs; conduct knowledge transfer workshops; maintain runbooks |
+| Infrastructure cost overrun | Medium | Medium | Right-size based on pilot data; use auto-scaling where possible |
+| Regulatory changes to DPDP Act | Low | High | Annual DPDP compliance review; modular consent/data architecture for adaptability |
+
+### Validation Criteria
+- System uptime ≥ 99.5% over first 3 months of production
+- Disaster Recovery test: RTO ≤ 4 hours demonstrated in drill
+- Model drift monitoring alerts triggered correctly in simulation
+- Government technical team can execute retraining pipeline independently by end of Y2
+
+### Exit Checklist (Y1 Production Launch Gate)
+- [ ] Production infrastructure deployed and load-tested
+- [ ] DR plan tested with documented RTO/RPO results
+- [ ] SLA document signed by all parties
+- [ ] Model Governance Policy approved and published
+- [ ] Grafana/Prometheus monitoring dashboards operational
+- [ ] Government technical team trained on operations
+- [ ] Handover documentation delivered (Ansible playbooks, runbooks, architecture docs)

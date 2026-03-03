@@ -1,0 +1,407 @@
+# Section A – Complete System Architecture
+## AI-Based ECD Decision Support Layer for India (ICDS / WD&CW Alignment)
+
+---
+
+## A.1 High-Level Architecture – Layered Description
+
+The system is decomposed into six horizontal layers. Each layer has a defined responsibility boundary and communicates only through specified interfaces.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  LAYER 6 – GOVERNANCE & ANALYTICS TIER                              │
+│  State Dashboard │ CDPO View │ Supervisor View │ Audit Log Console  │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 5 – ROLE-BASED ACCESS & PRESENTATION TIER                    │
+│  AWW Android App │ Web Portal (Supervisor/CDPO/State)               │
+│  JWT + RBAC Gateway │ Session Management                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 4 – API & ORCHESTRATION TIER                                 │
+│  REST API Gateway │ Queue-Based Async Jobs │ Sync Conflict Manager  │
+│  Webhook Dispatcher │ Audit Event Emitter                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 3 – INTELLIGENCE TIER                                        │
+│  Risk Engine │ Developmental Trajectory Engine │ Explainability Mod │
+│  Calibration Service │ FN Mitigation Monitor │ Cohort Aggregator    │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 2 – DATA MANAGEMENT TIER                                     │
+│  PostgreSQL (Structured) │ TimescaleDB (Time-series trajectories)   │
+│  Encrypted Object Store │ Consent Registry │ Audit Ledger DB        │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 1 – EDGE / OFFLINE TIER                                      │
+│  Android App (Local SQLCipher DB) │ Offline Risk Engine (ONNX)      │
+│  Encrypted Local Cache │ Sync Queue │ Conflict Resolver (device)    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+> [!IMPORTANT]
+> All computation layers operate within government-controlled infrastructure. No third-party cloud tenancy is used. Models run on-premise or on NIC/MeitY-compliant government cloud (GI Cloud / NIC empanelled data centres).
+
+---
+
+## A.2 Component Breakdown
+
+### A.2.1 Edge / Offline Layer Components
+
+| Component | Technology | Purpose |
+|---|---|---|
+| Android Data Capture App | Kotlin, Jetpack Compose | ASHA/AWW-facing form capture, offline screening |
+| Local Encrypted Database | SQLCipher (AES-256) | Stores records offline when network unavailable |
+| On-Device Risk Engine | ONNX Runtime (Android) | Runs quantized screening model **without connectivity** (provisional tier only — see A.6) |
+| Sync Queue Manager | WorkManager + Room | Queues changes, manages retry and backoff |
+| Conflict Resolver (Client) | Last-Write-Wins + field-level merge | Resolves offline edits before server sync |
+| Local Consent Store | Encrypted SharedPreferences | Stores signed consent tokens per child record |
+
+### A.2.2 API & Orchestration Layer Components
+
+| Component | Technology | Purpose |
+|---|---|---|
+| REST API Gateway | FastAPI (Python) or Spring Boot | Exposes versioned REST endpoints; validates tokens |
+| Auth Service | Keycloak (on-prem) | OAuth2 + OIDC; RBAC role enforcement |
+| Async Job Queue | Celery + Redis | Handles trajectory recalculation, report generation |
+| Sync Conflict Manager (Server) | Custom reconciliation service | Resolves conflicts from multiple offline devices |
+| Audit Event Emitter | Kafka or direct DB write | Emits tamper-evident audit log entries |
+| Webhook Dispatcher | Celery beat | Notifies upstream systems (e.g., ICDS-CAS integration) |
+
+### A.2.3 Intelligence Layer Components
+
+| Component | Technology | Purpose |
+|---|---|---|
+| Risk Engine | Scikit-learn / XGBoost / LightGBM | Produces risk tier: Low/Medium/High/Critical per domain |
+| Developmental Trajectory Engine | Custom Python service + TimescaleDB | Tracks longitudinal scores, computes trajectories |
+| Explainability Module | SHAP (SHapley Additive exPlanations) | Per-prediction feature contributions in plain language |
+| Calibration Service | Platt Scaling / Isotonic Regression | Ensures probability outputs are calibrated |
+| FN Mitigation Monitor | Threshold adjustment + alert rules | Reduces false-negative rate for High/Critical tiers |
+| Cohort Aggregator | SQL + Pandas batch jobs | Block/district-level impact metrics |
+| Retraining Orchestrator | MLflow + Airflow (scheduled) | Manages model versioning, drift detection, retraining |
+
+### A.2.4 Data Management Layer Components
+
+| Component | Technology | Purpose |
+|---|---|---|
+| Primary Relational DB | PostgreSQL 15+ | Child records, assessments, users, consents |
+| Time-Series DB | TimescaleDB (PostgreSQL extension) | Trajectory data, longitudinal screening time points |
+| Encrypted Object Store | MinIO (on-prem, S3-compatible) | Model artifacts, PDF reports, training datasets |
+| Consent Registry | Separate PostgreSQL schema | Auditable consent capture and revocation records |
+| Audit Ledger | Append-only PostgreSQL table + checksum chain | Tamper-evident audit trail |
+
+### A.2.5 Governance & Analytics Layer Components
+
+| Component | Technology | Purpose |
+|---|---|---|
+| AWW View | Android App embedded dashboard | Individual child list, risk flags, referral actions |
+| Supervisor View | React Web App | Block-level aggregates, intervention status, alerts |
+| CDPO View | React Web App | District-level analytics, cohort trends, reports |
+| State Dashboard | React Web App + Metabase/Superset | Statewide indicators, coverage, programme fidelity |
+| Audit Log Console | React Admin Panel | Immutable log viewer, export, compliance review |
+
+---
+
+## A.3 Data Flow Diagram – Explanation
+
+### Primary Flow: Child Screening (Online)
+
+```
+AWW captures screening data via Android App
+    │
+    ▼
+App validates locally → submits to API Gateway (HTTPS/TLS 1.3)
+    │
+    ▼
+Auth Service validates JWT + role = AWW
+    │
+    ▼
+API Gateway writes raw assessment to PostgreSQL (encrypted at rest)
+    │
+    ▼
+Async Job: Risk Engine invoked → produces (score, tier, SHAP values)
+    │
+    ▼
+Risk result written to DB; trajectory engine updates longitudinal record
+    │
+    ▼
+Audit Event Emitter logs: [user, action, timestamp, record_id, data_hash]
+    │
+    ▼
+Risk tier surfaced to AWW App on next poll / push notification
+    │
+    ▼
+Supervisor/CDPO dashboards aggregate results via batch cohort jobs
+```
+
+### Secondary Flow: Offline Screening (Disconnected AWW)
+
+```
+AWW captures data → stored in local SQLCipher DB
+    │
+On-device ONNX Risk Engine produces provisional risk tier
+    │
+Result stored locally with sync_status = PENDING
+    │
+On connectivity restoration: WorkManager triggers sync
+    │
+Client-side conflict resolver checks record timestamps + version hashes
+    │
+Sync payload submitted to API (compressed, encrypted)
+    │
+Server Conflict Manager applies reconciliation policy
+    │
+Server Risk Engine re-runs on server-authoritative data
+    │
+Canonical result returned; local record updated with sync_status = SYNCED
+    │
+Audit log records sync event with device_id, timestamp delta
+```
+
+### Governance Flow: Audit & Compliance
+
+```
+Every data write/read/delete → Audit Event Emitter
+    │
+Append-only audit table: (event_id, user_id, role, action, table_ref,
+record_id, old_hash, new_hash, timestamp, IP/device)
+    │
+Checksums chained: each entry's hash includes previous hash (ledger chain)
+    │
+Audit Log Console: read-only view for authorised compliance officers
+    │
+Scheduled export: monthly signed PDF audit summary → State officer inbox
+```
+
+---
+
+## A.4 API Structure Outline
+
+All APIs are versioned under `/api/v1/`. Authentication is Bearer JWT. Role enforcement is at the gateway level.
+
+### Authentication & Session
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| POST | `/api/v1/auth/token` | All | Exchange credentials for JWT |
+| POST | `/api/v1/auth/refresh` | All | Refresh access token |
+| POST | `/api/v1/auth/logout` | All | Revoke session |
+
+### Child Records
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| POST | `/api/v1/children` | AWW | Register new child record |
+| GET | `/api/v1/children/{id}` | AWW, Supervisor | Retrieve child record |
+| PATCH | `/api/v1/children/{id}` | AWW | Update child record (versioned) |
+| GET | `/api/v1/children` | Supervisor, CDPO | List children (paginated, filtered) |
+
+### Screening Assessments
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| POST | `/api/v1/assessments` | AWW | Submit new screening assessment |
+| GET | `/api/v1/assessments/{id}` | AWW, Supervisor | Retrieve assessment + risk result |
+| GET | `/api/v1/assessments/child/{child_id}` | Supervisor | Longitudinal assessment history |
+
+### Risk Engine
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| GET | `/api/v1/risk/{assessment_id}` | AWW, Supervisor | Retrieve risk tier + SHAP explanation |
+| POST | `/api/v1/risk/batch` | Internal | Batch recalculation (admin-triggered) |
+
+### Trajectory
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| GET | `/api/v1/trajectory/{child_id}` | Supervisor, CDPO | Full developmental trajectory |
+| GET | `/api/v1/trajectory/cohort` | CDPO, State | Cohort-level trajectory aggregates |
+
+### Consent
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| POST | `/api/v1/consent` | AWW | Capture signed consent for child |
+| GET | `/api/v1/consent/{child_id}` | Supervisor | Retrieve consent record |
+| DELETE | `/api/v1/consent/{child_id}` | Supervisor | Revoke consent (triggers data hold) |
+
+### Sync (Offline Client)
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| POST | `/api/v1/sync/push` | AWW (device) | Push pending offline records |
+| GET | `/api/v1/sync/pull` | AWW (device) | Pull server-authoritative updates |
+| GET | `/api/v1/sync/status` | AWW (device) | Check sync queue status |
+
+### Analytics & Reports
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| GET | `/api/v1/analytics/block` | Supervisor | Block-level risk distribution |
+| GET | `/api/v1/analytics/district` | CDPO | District-level metrics |
+| GET | `/api/v1/analytics/state` | State Officer | Statewide programme indicators |
+| GET | `/api/v1/reports/export` | CDPO, State | Generate and download report (async) |
+
+### Audit
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| GET | `/api/v1/audit/logs` | Compliance Officer | Query audit log (filtered, paginated) |
+| GET | `/api/v1/audit/export` | Compliance Officer | Export signed audit log |
+
+---
+
+## A.5 Database Schema Overview
+
+### Core Tables (PostgreSQL)
+
+#### `children`
+```sql
+child_id          UUID PRIMARY KEY
+state_id          VARCHAR(6)           -- State code
+district_id       VARCHAR(10)
+block_id          VARCHAR(15)
+anganwadi_id      VARCHAR(20)
+dob               DATE
+gender            CHAR(1)
+family_id         UUID                 -- FK to families table
+registration_date DATE
+consent_id        UUID                 -- FK to consents table
+created_by        UUID                 -- FK to users table
+record_version    INTEGER DEFAULT 1
+last_modified     TIMESTAMPTZ
+is_deleted        BOOLEAN DEFAULT FALSE
+```
+
+#### `assessments`
+```sql
+assessment_id     UUID PRIMARY KEY
+child_id          UUID                 -- FK to children
+aww_id            UUID                 -- FK to users (AWW role)
+assessment_date   DATE
+age_at_assessment_months  INTEGER
+source            CHAR(1)              -- 'O' = Online, 'F' = Offline-sync
+-- Domain scores (raw indicator responses stored as JSONB)
+cognitive_responses     JSONB
+motor_responses         JSONB
+socio_emotional_responses JSONB
+sync_status       VARCHAR(10)          -- PENDING / SYNCED / CONFLICT
+device_id         VARCHAR(64)
+created_at        TIMESTAMPTZ
+submitted_at      TIMESTAMPTZ
+```
+
+#### `risk_results`
+```sql
+result_id         UUID PRIMARY KEY
+assessment_id     UUID                 -- FK to assessments
+model_version     VARCHAR(20)
+-- Risk tiers per domain
+cognitive_tier    SMALLINT             -- 0=Low, 1=Med, 2=High, 3=Critical
+motor_tier        SMALLINT
+socio_emotional_tier SMALLINT
+overall_tier      SMALLINT
+-- Calibrated probabilities
+cognitive_prob    NUMERIC(5,4)
+motor_prob        NUMERIC(5,4)
+socio_emotional_prob NUMERIC(5,4)
+-- Explainability
+shap_values       JSONB                -- Feature: value pairs
+top_risk_factors  JSONB                -- Top 3 human-readable factors
+computed_at       TIMESTAMPTZ
+is_provisional    BOOLEAN              -- TRUE if computed on-device
+```
+
+#### `developmental_trajectories` (TimescaleDB hypertable)
+```sql
+trajectory_id     UUID
+child_id          UUID
+time_point        TIMESTAMPTZ          -- Partitioned by this
+age_months        INTEGER
+cognitive_coeff   NUMERIC(6,4)         -- Developmental coefficient
+motor_coeff       NUMERIC(6,4)
+socio_emotional_coeff NUMERIC(6,4)
+risk_transition   VARCHAR(20)          -- e.g. 'Medium→High'
+cohort_percentile NUMERIC(5,2)
+```
+
+#### `consents`
+```sql
+consent_id        UUID PRIMARY KEY
+child_id          UUID
+guardian_name     VARCHAR(100)
+consent_date      DATE
+consent_type      VARCHAR(20)          -- e.g. 'SCREENING', 'DATA_SHARING'
+consent_method    VARCHAR(20)          -- 'VERBAL_WITNESSED', 'THUMBPRINT'
+witness_id        UUID                 -- AWW who witnessed
+revoked           BOOLEAN DEFAULT FALSE
+revocation_date   DATE
+consent_hash      VARCHAR(64)          -- SHA-256 of consent content
+```
+
+#### `audit_log` (append-only)
+```sql
+log_id            BIGSERIAL PRIMARY KEY
+event_timestamp   TIMESTAMPTZ NOT NULL
+user_id           UUID
+user_role         VARCHAR(20)
+action            VARCHAR(50)          -- CREATE/READ/UPDATE/DELETE/LOGIN/SYNC
+resource_type     VARCHAR(50)
+resource_id       UUID
+old_value_hash    VARCHAR(64)
+new_value_hash    VARCHAR(64)
+ip_address        INET
+device_id         VARCHAR(64)
+previous_log_hash VARCHAR(64)          -- Chained checksum
+log_entry_hash    VARCHAR(64)          -- SHA-256 of this row
+```
+
+#### `users`
+```sql
+user_id           UUID PRIMARY KEY
+keycloak_sub      VARCHAR(100) UNIQUE
+full_name         VARCHAR(100)
+role              VARCHAR(20)          -- AWW/SUPERVISOR/CDPO/STATE/ADMIN
+anganwadi_id      VARCHAR(20)
+block_id          VARCHAR(15)
+district_id       VARCHAR(10)
+state_id          VARCHAR(6)
+is_active         BOOLEAN DEFAULT TRUE
+created_at        TIMESTAMPTZ
+```
+
+### Indexes & Partitioning Strategy
+- `children`: Index on `(district_id, block_id, anganwadi_id)` for geographic drill-down
+- `assessments`: Index on `(child_id, assessment_date DESC)` for longitudinal queries; partial index on `sync_status='PENDING'`
+- `risk_results`: Index on `(overall_tier, computed_at)` for high-risk cohort pulls
+- `developmental_trajectories`: TimescaleDB hypertable partitioned by `time_point` (monthly chunks)
+- `audit_log`: Partitioned by year; read-only after write (DDL trigger enforced)
+
+---
+
+> [!NOTE]
+> This architecture deliberately excludes clinical diagnosis capabilities. The risk engine outputs screening-level stratification only. All results include the disclaimer: *"This is a developmental screening flag, not a clinical diagnosis. Refer to qualified health personnel for assessment."*
+
+---
+
+## A.6 Inference Architecture – Hybrid Model (Explicit)
+
+This section resolves the ambiguity between on-device and server inference. Both are used, with clearly defined roles and trust hierarchy.
+
+### Inference Decision Matrix
+
+| Condition | Inference Location | Model Used | Result Status | Authoritative? |
+|---|---|---|---|---|
+| Device online at submission | **Server** | Full Python model (XGBoost/LightGBM) | `CANONICAL` | ✅ Yes |
+| Device offline at submission | **On-device** | Quantized ONNX (INT8) | `PROVISIONAL` | ❌ No |
+| Device regains connectivity | **Server re-runs** | Full Python model on server-authoritative data | `CANONICAL` | ✅ Yes |
+| Shadow mode (Phase 0) | **Server (silent)** | Full model; output not shown to AWW | `SHADOW` | N/A |
+
+### Trust Hierarchy Rules
+
+1. **Server is always authoritative.** A `PROVISIONAL` result is displayed to the AWW only when offline and must show a clear UI indicator: *"Risk estimate based on device model — will be updated when connected."*
+2. **Server recalculates unconditionally on sync.** Even if the provisional and server scores agree, the server-computed result overwrites the provisional one and the `is_provisional` flag is cleared.
+3. **SHAP explanations are server-only.** The on-device ONNX model does not produce SHAP values. A placeholder message is shown offline: *"Detailed explanation available after next sync."*
+4. **Critical-tier provisional results trigger an immediate sync prompt.** If on-device inference scores a child as `Critical`, WorkManager is instructed to attempt immediate sync; the AWW is alerted to seek connectivity.
+
+### Model Parity Guarantee
+
+Before each ONNX release, numeric parity is verified:
+- Test set: 500 records drawn from held-out set
+- Acceptance criterion: ≤1% tier reclassification rate between ONNX and Python model
+- If parity fails, the ONNX build is blocked until resolved
+
+```
+Parity check (CI pipeline):
+  Python model → probabilities[500 records]
+  ONNX model   → probabilities[500 records]
+  Max tier reclassification rate: 1.0%  ← gate
+  Max probability delta (mean):   0.005 ← gate
+```

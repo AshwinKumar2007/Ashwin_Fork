@@ -1,0 +1,344 @@
+# Sections C, D & E – Documentation, Verification & Clarifying Questions
+## AI-Based ECD Decision Support Layer for India
+
+---
+
+# Section C – Documentation Repository Structure
+
+The following structure should be maintained in version control (Git). All documentation is treated as code – reviewed, versioned, and tagged alongside software releases.
+
+```
+/docs
+├── 00_overview
+│   ├── README.md                         # System overview and navigation guide
+│   ├── glossary.md                       # Domain + technical term definitions
+│   └── stakeholder_map.md                # Roles, responsibilities, contact matrix
+│
+├── 01_architecture
+│   ├── system_architecture.md            # High-level layered architecture (Section A)
+│   ├── component_diagram.md              # Component interaction diagram (textual/Mermaid)
+│   ├── data_flow_diagram.md              # Primary + secondary + governance flows
+│   ├── api_structure.md                  # API endpoint catalogue (auto-generated from OpenAPI)
+│   ├── database_schema.md                # Full ER diagram + schema definitions
+│   ├── offline_sync_protocol.md          # Sync queue, conflict resolution specification
+│   └── infrastructure_config.md          # Server topology, K8s config, NIC cloud setup
+│
+├── 02_api
+│   ├── openapi.yaml                      # Machine-readable OpenAPI 3.1 spec (auto-generated)
+│   ├── api_versioning_policy.md          # Versioning rules, deprecation policy
+│   ├── auth_guide.md                     # JWT, OAuth2 flow, role token contents
+│   └── integration_guide.md             # ICDS-CAS integration, third-party API consumption
+│
+├── 03_model
+│   ├── model_card.md                     # Model Card v1.x (intended use, limitations, data)
+│   ├── bias_fairness_report.md           # Performance disaggregation by demographics
+│   ├── explainability_guide.md           # SHAP methodology, output format, interpretation guide
+│   ├── calibration_report.md             # Reliability diagrams, ECE scores
+│   ├── false_negative_analysis.md        # FNR by tier, threshold sensitivity, mitigation policy
+│   ├── training_data_summary.md          # Provenance, preprocessing, synthetic generation method
+│   ├── retraining_schedule.md            # Trigger conditions, frequency, approval process
+│   └── model_versions/
+│       └── v1.0_experiment_log.md        # MLflow run references, hyperparameters, metrics
+│
+├── 04_security_compliance
+│   ├── dpdp_compliance_matrix.md         # DPDP Act 2023 requirement → control mapping
+│   ├── privacy_impact_assessment.md      # PIA document
+│   ├── data_processing_agreement.md      # DPA template for government use
+│   ├── data_breach_response_plan.md      # Incident detection, notification, containment
+│   ├── encryption_configuration.md       # TLS spec, key management, rotation schedule
+│   ├── rbac_policy.md                    # Role definitions, permission matrices
+│   ├── pentest_report/
+│   │   └── pentest_YYYY-MM.md            # Pen test reports (versioned by date)
+│   ├── vulnerability_remediation_log.md  # Track findings → status → resolution
+│   ├── server_hardening_checklist.md     # CIS benchmark compliance record
+│   └── annual_security_audit_schedule.md
+│
+├── 05_deployment
+│   ├── deployment_guide.md               # Step-by-step deployment runbook
+│   ├── environment_prerequisites.md      # Server specs, OS, network requirements
+│   ├── docker_compose.md                 # Local dev environment setup
+│   ├── kubernetes_config.md              # K8s manifests (or Helm values) explanation
+│   ├── database_migration_guide.md       # Alembic migration procedures
+│   ├── rollback_procedure.md             # Version rollback steps
+│   ├── disaster_recovery_plan.md         # DR architecture, RTO/RPO targets, test record
+│   └── monitoring_setup.md              # Grafana dashboards, Prometheus alert rules
+│
+├── 06_maintenance
+│   ├── operations_runbook.md             # Daily/weekly/monthly operational tasks
+│   ├── model_retraining_procedure.md     # Step-by-step retraining + deployment workflow
+│   ├── dependency_upgrade_policy.md      # Framework and library upgrade schedule
+│   ├── backup_restore_procedure.md       # PostgreSQL, MinIO, config backup procedures
+│   ├── incident_management.md           # P1/P2/P3 definition, escalation, SLAs
+│   └── 5yr_om_roadmap.md                # Year-by-year O&M activities (Phase 8 output)
+│
+├── 07_audit
+│   ├── audit_log_specification.md        # Schema, chaining mechanism, query guide
+│   ├── audit_query_guide.md              # Common queries for compliance review
+│   ├── consent_lifecycle_guide.md        # Consent capture, storage, revocation procedure
+│   └── audit_export_procedure.md         # Monthly signed PDF export workflow
+│
+├── 08_field_training
+│   ├── aww_training_manual.md            # AWW user guide (icon-based, simple language)
+│   ├── supervisor_training_manual.md     # Supervisor and CDPO user guide
+│   ├── train_the_trainer_guide.md        # Guidelines for district-level trainers
+│   ├── faq_field.md                      # Common field questions and answers
+│   └── referral_protocol.md             # Steps when High/Critical risk flagged
+│
+└── 09_governance
+    ├── data_ownership_agreement.md       # Government data ownership template
+    ├── system_acceptance_plan.md         # Government acceptance testing criteria
+    ├── programme_monitoring_framework.md # KPIs, reporting cadence, responsible parties
+    └── knowledge_transfer_plan.md        # Y2/Y5 government technical handover plan
+```
+
+### Documentation Standards
+- All markdown documents reviewed via pull request before merge
+- OpenAPI spec auto-generated from FastAPI annotations; manually reviewed quarterly
+- Model Card and Bias Report updated with every model version release
+- Audit Log Specification is immutable once approved; changes require government sign-off
+- Field Training Manuals produced in English + regional language (state-specific)
+
+---
+
+# Section D – Verification & Review Plan
+
+## D.1 Model Validation Metrics
+
+| Metric | Threshold | Tier Applicability | Measurement Method |
+|---|---|---|---|
+| AUC-ROC | ≥ 0.80 (synthetic), ≥ 0.75 (real) | Per domain | Scikit-learn `roc_auc_score` on held-out test set |
+| Sensitivity (Recall) | ≥ 0.85 for High/Critical | High, Critical | Confusion matrix; class-weighted |
+| Specificity | ≥ 0.75 | Low, Medium | Confusion matrix |
+| Expected Calibration Error (ECE) | ≤ 0.05 | All | `calibration_curve` + ECE calculation |
+| Brier Score | ≤ 0.15 | All | `brier_score_loss` |
+| F1-Score (macro) | ≥ 0.75 | All | `f1_score(average='macro')` |
+| Fairness: AUC gap by gender | ≤ 0.05 | All | Disaggregated AUC; Fairness Indicators library |
+| Fairness: FNR gap by geography | ≤ 0.05 | High, Critical | FNR per state/district stratum |
+
+All metrics computed on a stratified held-out test set (20% of training data, stratified by age band, gender, and geographic tier).
+
+---
+
+## D.2 False-Negative Monitoring Strategy
+
+**Rationale:** A false negative at High or Critical tier means a child at developmental risk is not flagged, potentially missing intervention. This is the highest-consequence error class.
+
+### Operational Monitoring Protocol
+
+1. **Static Threshold Override:** For High and Critical tiers, calibrated probability thresholds are set asymmetrically: sensitivity-first (favour recall over precision). The threshold is a configurable parameter, not hard-coded.
+2. **Sentinel Case Review:** A random 5% sample of Low/Medium-flagged children are selected monthly for supervised re-review by Supervisors. Discrepancies between system tier and Supervisor re-assessment are logged as potential false negatives.
+3. **Drift-Triggered FNR Audit:** If Population Stability Index (PSI) of input features exceeds 0.2 (model distribution drift), a mandatory FNR re-audit is triggered.
+4. **Referral Outcome Tracking:** If referral outcome data becomes available (e.g., clinical assessment post-referral), it is used as a retrospective ground truth to compute real-world FNR.
+5. **Alert Rule:** If computed FNR for Critical tier exceeds 12% over a rolling 90-day window, a P1 alert is raised to the ML team and government programme officer.
+
+---
+
+## D.3 Integration Test Plan
+
+### API Integration Tests
+
+All tests run in CI/CD pipeline on every pull request against a staging environment with seeded test data.
+
+| Test ID | Test Description | Method | Pass Criteria |
+|---|---|---|---|
+| INT-001 | Child registration → assessment → risk result end-to-end | Pytest (HTTP client) | 200 OK at each step; risk result returned with tier + SHAP values |
+| INT-002 | AWW role cannot access Supervisor endpoints | Pytest (role-boundary) | 403 Forbidden returned |
+| INT-003 | Supervisor cannot access data outside own block | Pytest (data-scoping) | Child records from other blocks return 404/403 |
+| INT-004 | Consent revocation triggers data access hold | Pytest | Subsequent read returns 403 until resolved |
+| INT-005 | Sync push with new records creates server records correctly | Pytest | Server DB record count matches push payload |
+| INT-006 | Sync push with conflicting records triggers resolution | Pytest | Server returns reconciled record; audit log records conflict event |
+| INT-007 | Audit log entry created for every write operation | Pytest | audit_log table has correct entry after each create/update |
+| INT-008 | Batch risk recalculation updates all records in cohort | Pytest (async job) | All records in test cohort have updated risk_results after job completion |
+| INT-009 | Analytics endpoint returns correct aggregates for district | Pytest | Expected count, tier distributions match test data |
+| INT-010 | Token expiry forces re-authentication | Pytest | Expired token returns 401; valid refresh token returns new access token |
+
+---
+
+## D.4 Offline Sync Failure Testing
+
+Tests run on physical Android devices and emulators with network conditions artificially throttled using Android Emulator network control or `tc` (traffic control) on test server.
+
+| Test ID | Scenario | Method | Pass Criteria |
+|---|---|---|---|
+| SYNC-001 | 72-hour offline, 200 records queued, then reconnect | Physical device test | All 200 records sync successfully; no duplicates; audit log reflects sync event |
+| SYNC-002 | Partial sync interrupted mid-flight (connection drop) | Emulator + network drop | WorkManager retries; no data corruption; sync completes on reconnect |
+| SYNC-003 | Same record edited offline on two devices concurrently | Two-emulator test | Server conflict manager produces single canonical record; both devices reflect resolved state |
+| SYNC-004 | Sync push with malformed payload (tampered data) | Pytest (malformed request) | API returns 400; no partial records written; audit log records rejected payload |
+| SYNC-005 | Sync under 2G-equivalent bandwidth (50kbps, 500ms latency) | Emulator + throttled network | Sync completes within 5 minutes for 200 records; no timeout errors |
+| SYNC-006 | Device clock skew of ±30 minutes | Emulator with clock offset | Conflict resolution uses server timestamp authoritatively; no ordering errors |
+| SYNC-007 | App killed mid-sync | Physical device test | WorkManager resumes sync on next launch; no records lost or duplicated |
+
+---
+
+## D.5 Security Testing Checklist
+
+### Web Application (OWASP Top 10 Alignment)
+
+| Check | Tool | Pass Criteria |
+|---|---|---|
+| SQL Injection | OWASP ZAP, manual | No injection vulnerability in any parameterised query |
+| Broken Authentication | Burp Suite | JWT not accepted without valid signature; refresh tokens cannot be reused |
+| Sensitive Data Exposure | Manual review, ssl-labs equivalent | TLS 1.3 enforced; no PII in API error messages; no PII in logs |
+| RBAC Boundary | Manual + automated tests | No privilege escalation across roles possible |
+| Security Misconfiguration | Trivy (container), testssl.sh | No critical container vulnerabilities; TLS A-grade |
+| XSS | OWASP ZAP | No stored or reflected XSS in dashboard inputs |
+| CSRF | Manual | SameSite cookie attribute set; CSRF tokens on state-changing requests |
+| Rate Limiting | Load test (k6) | API rate limiting enforced (e.g., 100 req/min per token) |
+| Audit Trail Integrity | Manual review | Audit log chaining verifiable; no rows deletable without detection |
+
+### Android Application
+
+| Check | Tool | Pass Criteria |
+|---|---|---|
+| Local data encryption | Manual + SQLCipher verification | All DB files encrypted; unreadable without key |
+| Network traffic inspection | mitmproxy | Certificate pinning enforced; no cleartext traffic |
+| Reverse engineering risk | APKTool + ProGuard verify | ProGuard obfuscation applied; no API keys in APK |
+| Exported components | Manual AndroidManifest review | No unintentionally exported activities/receivers |
+| Root detection bypass | Manual on rooted device | App detects root and warns user (or restricts sync) |
+
+---
+
+## D.6 Governance Compliance Audit Checklist
+
+This checklist is used for the annual governance compliance audit, conducted by the government DPO or appointed auditor.
+
+### DPDP Act 2023 Compliance
+
+| Requirement | Control | Evidence Location | Status |
+|---|---|---|---|
+| Valid consent before data collection | Consent capture in app; consent table | `consents` table; AWW app consent screen | To verify |
+| Consent is informed and in local language | Consent text shown in regional language | AWW app UI + consent_text field | To verify |
+| Purpose limitation – data used only for stated purpose | API data access restricted by role; no third-party data sharing | RBAC config; DPA | To verify |
+| Data minimisation | Only required fields collected per indicator framework | Data Minimisation Audit (D1.4) | To verify |
+| Data accuracy | AWW field validation; Supervisor review | App validation rules; supervisor review workflow | To verify |
+| Consent revocation mechanism | Revoke endpoint; data access hold on revocation | `/api/v1/consent/{id}` DELETE; audit log | To verify |
+| Data principal rights (access, correction) | Not yet applicable (children as data principals; guardian rights mechanism) | Legal review required | Open |
+| Data retention limits | 5-year retention policy; scheduled purge of non-essential fields | Retention policy document; scheduled DB purge job | To verify |
+| Data breach notification ≤72 hours | Breach Response Plan; Grafana anomaly alerts | `data_breach_response_plan.md` | To verify |
+| Government data ownership | DPA; no vendor data lock-in | Data Ownership Agreement; MinIO on-prem | To verify |
+
+### System Governance
+
+| Audit Area | Audit Activity | Frequency |
+|---|---|---|
+| Model Governance | Review model version, last retraining date, drift metrics | Quarterly |
+| Access Control | Review Keycloak user list; deactivate leavers | Monthly |
+| Audit Log Integrity | Verify checksum chain for previous month's log | Monthly |
+| Penetration Testing | Full pen test by external assessor | Annual |
+| Consent Registry | Sample audit of consent records vs. active child records | Quarterly |
+| Data Minimisation | Review any new fields added since last audit | Semi-annual |
+| Disaster Recovery | DR drill and documented RTO/RPO results | Annual |
+| Model Bias Review | Run Bias Report on latest real-world data | Annual (or at retraining) |
+
+---
+
+# Section E – Clarifying Questions
+
+The following questions must be answered before the plan can be finalised for execution. Questions are grouped by domain.
+
+---
+
+## E.1 Target State & Deployment Scope
+
+1. **Which state(s) are targeted for Phase 7 pilot?**
+   - This determines: language localisation requirements, ICDS-CAS integration variant, and district selection for pilot.
+
+2. **Is there an existing ICDS-CAS digital system in the target state?**
+   - If yes: Is there an API or data export available for integration? Is there a data sharing agreement already in place?
+
+3. **What is the expected number of children in the pilot?**
+   - Please specify: number of Anganwadi centres (AWCs), approximate number of children under 6, and geographic spread (urban/rural/tribal).
+
+4. **Is the pilot restricted to a specific age band (e.g., 0–3 years, 3–6 years, or both)?**
+   - This directly determines the indicator set and risk model features.
+
+---
+
+## E.2 Deployment Environment
+
+5. **What is the hosting environment for the server-side system?**
+   - Options: a) NIC Data Centre (preferred for compliance), b) State Data Centre (SDC), c) MeitY-empanelled government cloud (GI Cloud/Meghraj), d) Other.
+
+6. **Is there an existing government IT team to manage the server infrastructure?**
+   - If yes: What OS, database, and containerisation stack are they already operating?
+
+7. **What is the expected network connectivity profile of AWWs in the pilot area?**
+   - Please characterise: percentage with smartphones, percentage with 4G vs 2G/3G vs no connectivity.
+
+8. **What Android device model(s) are AWWs using or will be provided?**
+   - Minimum RAM, Android API version, and storage capacity are required for ONNX model sizing decisions.
+
+---
+
+## E.3 Team Size & Composition
+
+9. **What is the current team composition?**
+   - How many ML engineers, backend engineers, Android developers, frontend engineers, DevOps, domain experts, and government liaisons are available or to be recruited?
+
+10. **Is this an in-house government team, a contracted vendor team, a research institution, or a hybrid?**
+    - This affects governance, IP ownership, and the knowledge transfer requirement.
+
+11. **Is there an identified ECD domain expert (paediatrics/child development) on the team or available for consultation?**
+    - The indicator framework and model card require domain expert sign-off.
+
+---
+
+## E.4 Timeline Constraints
+
+12. **Is there a hard submission or pilot launch deadline?**
+    - e.g., tied to a government innovation challenge, budget cycle, or election cycle.
+
+13. **Is a proof-of-concept deliverable required before full build commences?**
+    - e.g., a functioning static demo or paper prototype for government approval.
+
+14. **What is the current stage of the project?**
+    - Is this pre-proposal, a funded project, or already under development?
+
+---
+
+## E.5 Technical Stack Preferences
+
+15. **Does the government counterpart have approved or mandated technology stacks?**
+    - e.g., NIC may mandate specific OS, database, or programming language choices.
+
+16. **Is there a preference for or restriction on open-source vs. commercial software?**
+    - e.g., restrictions on using non-government-audited open-source libraries.
+
+17. **Is NeSDA (National e-Governance Software Development Assessment) compliance required?**
+    - If so, coding standards and documentation must align to NeSDA guidelines.
+
+18. **Will the system integrate with any existing national digital public infrastructure?**
+    - e.g., ABDM (Ayushman Bharat Digital Mission), POSHAN Tracker, Vatsalya MIS, or any other state MIS.
+
+---
+
+## E.6 DPIIT / Regulatory Status
+
+19. **Is the proposing organisation registered as a DPIIT-recognised startup?**
+    - This affects procurement route (GEM startup portal, innovation procurement pathways).
+
+20. **Has a Data Protection Officer (DPO) been appointed or identified?**
+    - Required under DPDP Act 2023 for significant data fiduciaries. If the government entity operates the system, the DPO obligation may lie with them.
+
+21. **Has any IRB (Institutional Review Board) or ethics review been initiated?**
+    - Required if primary data collection from children is involved, even for screening.
+
+---
+
+## E.7 Expected Pilot Size & Success Metrics
+
+22. **What is the minimum pilot success definition from the government's perspective?**
+    - e.g., number of successful screenings, AWW adoption rate, referral conversion rate.
+
+23. **What is the expected number of AWWs, Supervisors, and CDPOs to be onboarded in the pilot?**
+
+24. **Is there an existing baseline dataset (even anonymised) from ICDS or POSHAN Tracker that can be used for initial model training?**
+    - This is the single most important factor for Phase 2 timeline feasibility.
+
+25. **What is the feedback mechanism for ground-truth validation post-pilot?**
+    - e.g., Will there be clinical assessments of flagged children whose outcomes can be used as model ground truth?
+
+---
+
+> [!IMPORTANT]
+> Questions E.7.24 (existing baseline dataset availability) and E.2.5 (hosting environment) are the two highest-priority questions for resolving Phase 1 and Phase 2 feasibility. All other questions can be answered in parallel or after project initiation, but these two should be resolved before committing to a development timeline.

@@ -1,0 +1,397 @@
+# Gap-Closure Supplement
+## AI-Based ECD Decision Support Layer – Critical Review Response
+
+This document closes five gaps identified in the critical review. It should be read alongside [ecd_system_architecture.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_system_architecture.md) and [ecd_development_phases.md](file:///C:/Users/cnevi/.gemini/antigravity/brain/382a8dc0-c510-4fba-966d-20b69e5733cb/ecd_development_phases.md).
+
+---
+
+# Gap 1 – Clinical Escalation Protocol & PHC Feedback Loop
+
+## 1.1 The Missing Loop
+
+The original plan documents referrals but does not define what happens after. Without a structured feedback pathway, the system cannot improve from real-world outcomes and longitudinal claims about trajectory cannot be validated.
+
+The required loop is:
+
+```
+SCREENING (AWW)
+     │
+     ▼
+RISK FLAG: High / Critical
+     │
+     ▼
+REFERRAL RECORD CREATED (AWW logs referral in app → syncs to server)
+     │
+     ▼
+PHC / SPECIALIST VISIT (offline event — ground truth is generated here)
+     │
+     ▼
+OUTCOME CAPTURE (two pathways):
+  A) AWW records PHC outcome in app (low-tech: outcome code dropdown)
+  B) PHC MIS integration (if available — state-dependent)
+     │
+     ▼
+OUTCOME STORED IN `referral_outcomes` TABLE
+     │
+     ▼
+GROUND TRUTH PIPELINE: outcome → training label ingestion → model retraining
+```
+
+## 1.2 Database Addition: `referral_outcomes`
+
+```sql
+referral_id         UUID PRIMARY KEY
+assessment_id       UUID                  -- FK to assessments
+child_id            UUID
+referral_date       DATE
+referred_to         VARCHAR(100)          -- e.g., "PHC Khandwa Block 2"
+referral_type       VARCHAR(50)           -- 'NRC', 'PHC_OPD', 'SPECIALIST', 'ANGANWADI_FOLLOWUP'
+outcome_capture_method VARCHAR(20)        -- 'AWW_INPUT', 'PHC_API', 'SUPERVISOR_CONFIRM'
+outcome_date        DATE
+outcome_code        SMALLINT
+  -- 0 = Not attended
+  -- 1 = Attended; no concern found
+  -- 2 = Attended; mild concern; home management
+  -- 3 = Attended; moderate concern; follow-up required
+  -- 4 = Attended; significant delay confirmed; intervention initiated
+outcome_notes       TEXT                  -- Optional free-text
+confirmed_by        UUID                  -- Supervisor who verified
+recorded_at         TIMESTAMPTZ
+```
+
+## 1.3 Outcome Quality Scoring
+
+Not all outcomes are equally reliable for model training:
+
+| Outcome Method | Quality Score | Used for Retraining? |
+|---|---|---|
+| PHC electronic record (API) | 1.0 | Yes |
+| Supervisor-confirmed AWW input | 0.85 | Yes |
+| AWW self-reported (unverified) | 0.50 | Only if volume low; flagged |
+| Not attended (no outcome) | 0.0 | Excluded |
+
+Only outcomes with quality score ≥ 0.5 are included in the retraining dataset. All outcomes are stored regardless.
+
+## 1.4 Ground Truth Pipeline (Post-Pilot)
+
+After Phase 7 pilot, if ≥ 100 confirmed outcomes are collected:
+
+1. Extract `(assessment_features, outcome_code ≥ 3)` as positive labels
+2. Extract `(assessment_features, outcome_code ≤ 1)` as negative labels
+3. Weight samples by `quality_score`
+4. Feed into the Phase 2 retraining pipeline as `real_world_v1` dataset
+5. Compare AUC-ROC against `synthetic_v1` model
+6. Publish Model Card v2.0 with real vs synthetic performance comparison
+
+> [!IMPORTANT]
+> Until ≥ 100 validated outcomes are collected, the model must be labelled in all outputs as: **"Trained on validated synthetic data; real-world calibration pending."** This is both accurate and required for intellectual honesty during Demo Day review.
+
+## 1.5 API Additions
+
+| Method | Endpoint | Role | Description |
+|---|---|---|---|
+| POST | `/api/v1/referrals` | AWW | Create referral record for High/Critical child |
+| PATCH | `/api/v1/referrals/{id}/outcome` | AWW, Supervisor | Record PHC outcome |
+| GET | `/api/v1/referrals/child/{child_id}` | Supervisor | Full referral + outcome history |
+| GET | `/api/v1/referrals/analytics` | CDPO, State | Referral completion rate, outcome distribution |
+
+---
+
+# Gap 2 – Real-World Data Transition Strategy
+
+## 2.1 Phase 0: Shadow Deployment Mode
+
+Phase 0 runs for approximately 4 weeks immediately before AWWs begin using system outputs. The model runs silently on real data, producing predictions that are **not shown to AWWs**.
+
+### Shadow Mode Rules
+
+```
+Shadow Mode Flag: system_config.shadow_mode = TRUE
+
+Behaviour when TRUE:
+  ├── Risk engine runs on every submitted assessment
+  ├── Results stored with result_status = 'SHADOW'
+  ├── SHADOW results NOT returned to AWW app
+  ├── SHADOW results visible ONLY to ML team + Supervisor (admin view)
+  └── Dashboard does NOT display pending risk results to AWW during shadow period
+
+Exit criteria to disable shadow mode:
+  ├── Shadow model AUC-ROC ≥ 0.72 on first 200 real assessments
+  ├── Calibration ECE ≤ 0.08 (relaxed from synthetic threshold)
+  ├── No systematic bias detected across gender/geography in shadow period
+  └── Government programme officer formally approves activation
+```
+
+### What Is Evaluated During Shadow Mode
+
+| Metric | Shadow Target | Action if Not Met |
+|---|---|---|
+| Score distribution shift vs synthetic | PSI ≤ 0.25 | Recalibrate thresholds before activation |
+| Proportion of Critical flags | ≤ 15% of total (avoid alert fatigue) | Raise threshold; re-evaluate with domain expert |
+| On-device vs server parity | ≤ 2% reclassification rate | Block ONNX release; fix parity before activation |
+| Data quality completeness rate | ≥ 70% of fields non-null | Improve app field validation; add mandatory fields |
+
+## 2.2 Threshold Recalibration Protocol
+
+The synthetic model's decision thresholds are trained to synthetic distributions. Before live activation, thresholds are recalibrated to real-world distributions.
+
+**Procedure:**
+1. Collect shadow-mode probability scores for 200+ real assessments
+2. Plot calibration curve (real label proxy: shadow scores vs domain expert re-review sample)
+3. Apply isotonic recalibration on the new distribution
+4. Re-compute tier thresholds using recalibrated probabilities
+5. Document new thresholds in `model_versions/v1.1_real_world_recalibration.md`
+6. Obtain sign-off from domain expert + government counterpart before activating
+
+## 2.3 Data Quality Score Per Assessment
+
+Each submitted assessment receives a `data_quality_score` (0.0–1.0) calculated as:
+
+```
+data_quality_score =
+    (non_null_fields / total_required_fields) × 0.5
+  + (in_range_fields / non_null_fields) × 0.3
+  + (1 if child age matches assessment age band else 0) × 0.2
+```
+
+Records with `data_quality_score < 0.6` are:
+- Stored and sync'd normally
+- **Excluded from model retraining dataset**
+- Flagged for Supervisor review
+
+## 2.4 Human Override Weighting
+
+AWW or Supervisor can flag a system risk tier as "Disagree – Override" with a mandatory reason code:
+
+| Override Code | Description | Effect on Model |
+|---|---|---|
+| OVR-01 | Child observed differently in person | Logged; stored as candidate annotation |
+| OVR-02 | Parent/guardian refusal to engage | Marked as missing data; excluded from training |
+| OVR-03 | Assessment conditions compromised | Assessment marked invalid; excluded from training |
+| OVR-04 | Data entry error (corrected) | Triggers re-submission; prior result deprecated |
+
+Overrides are logged in `audit_log` unconditionally. After accumulating ≥ 50 OVR-01 overrides, a systematic review is triggered to assess whether model predictions are systematically wrong in a specific context.
+
+---
+
+# Gap 3 – Workload Impact Model
+
+## 3.1 Time-Motion Estimate (Per Child, Per Screening Session)
+
+This estimate must be presented to government reviewers to answer: *"Does this increase AWW workload?"*
+
+| Activity | Time (New System) | Time (Baseline, Paper) | Delta |
+|---|---|---|---|
+| Child record lookup or new registration | 1.5 min | 3.0 min (finding register) | **−1.5 min** |
+| Domain screening entry (cognitive, motor, SE) | 4.0 min | 3.5 min (paper form fill) | **+0.5 min** |
+| Risk result review + referral action | 0.5 min | 1.5 min (manual calculation) | **−1.0 min** |
+| Sync confirmation (if online) | 0.2 min | 0.5 min (register filing) | **−0.3 min** |
+| **Total per screening** | **~6.2 min** | **~8.5 min** | **−2.3 min (−27%)** |
+
+> [!NOTE]
+> The above is an estimate based on comparable mHealth deployment studies (ASHA mobile studies, ANMOL). A formal time-motion study must be conducted in Phase 7 pilot and results published in the Pilot Evaluation Report.
+
+**Additional workload from sentinel sampling (D.2.2):**
+- 5% of low/medium-flagged children require Supervisor re-review
+- Estimated Supervisor time: 2–3 minutes per re-review
+- At 200 screenings/month/block: ~10 re-reviews/month = ~20–30 min total Supervisor overhead
+
+## 3.2 Data Consumption Model (Per AWW Device Per Month)
+
+| Activity | Estimated Data Volume |
+|---|---|
+| Assessment submission (1 record, compressed) | ~4 KB |
+| Risk result + SHAP fetch | ~2 KB |
+| App update (monthly incremental) | ~8 MB |
+| Dashboard sync (child list, 50 children) | ~15 KB |
+| **Monthly total (100 screenings + app update)** | **~8.6 MB/month** |
+
+This is compatible with a 1 GB/month mobile data plan. A 2G baseline of ~50 kbps can transfer one complete assessment in ≤ 2 seconds.
+
+## 3.3 Storage Capacity Projection (5-Year Horizon)
+
+Assumptions: 1 state; 50,000 Anganwadis; average 40 children per AWC; 2 screenings per year per child.
+
+| Data Type | Per Record Size | Annual Records | Annual Storage | 5-Year Storage |
+|---|---|---|---|---|
+| Child records | 2 KB | 2,000,000 | 4 GB | 20 GB |
+| Assessment records | 5 KB | 4,000,000 | 20 GB | 100 GB |
+| Risk results + SHAP | 3 KB | 4,000,000 | 12 GB | 60 GB |
+| Trajectory rows | 0.5 KB | 4,000,000 | 2 GB | 10 GB |
+| Audit log | 0.5 KB | ~20,000,000 | 10 GB | 50 GB |
+| Model artifacts + reports | — | — | 5 GB | 15 GB |
+| **Total (uncompressed)** | | | **~53 GB/year** | **~255 GB** |
+
+With PostgreSQL compression and TimescaleDB compression (typically 5–10×), real storage need is approximately **30–60 GB over 5 years** for a single state at full scale.
+
+**Infrastructure sizing recommendation:** 2× servers, 500 GB SSD each (RAID 1), with annual review. Object store (MinIO): 1 TB initially, reviewed at Year 2.
+
+---
+
+# Gap 4 – MVP Scope Separation
+
+## 4.1 What Must Be Built for the Challenge (Immediate Scope — 40%)
+
+The following components are **required to be functional for Demo Day / PoC submission.** Everything else is Target State Architecture documentation.
+
+| Component | Immediate Build | Target State Only |
+|---|---|---|
+| Android app (AWW screening + offline) | ✅ Build | — |
+| Local SQLCipher storage | ✅ Build | — |
+| On-device ONNX risk engine (provisional) | ✅ Build | — |
+| Server-side risk engine (canonical) | ✅ Build | — |
+| SHAP explanations per prediction | ✅ Build | — |
+| Basic sync (push/pull, online restore) | ✅ Build | — |
+| AWW dashboard (child list + risk flags) | ✅ Build | — |
+| Supervisor dashboard (block aggregates) | ✅ Build | — |
+| Consent capture (basic) | ✅ Build | — |
+| Audit log (write events) | ✅ Build | — |
+| PostgreSQL core schema | ✅ Build | — |
+| Basic RBAC (JWT, 2–3 roles) | ✅ Build | — |
+| **Kubernetes production cluster** | — | 📋 Target State |
+| **Full pen test + remediation** | — | 📋 Target State |
+| **MLflow experiment registry** | — | 📋 Target State |
+| **TimescaleDB multi-node** | — | 📋 Target State |
+| **PHC API integration** | — | 📋 Target State |
+| **CDPO + State dashboard** | — | 📋 Target State |
+| **Audit log chaining cryptography** | — | 📋 Target State |
+| **Disaster recovery drill** | — | 📋 Target State |
+| **NeSDA compliance** | — | 📋 Target State |
+| **Full DPDP compliance matrix** | — | 📋 Target State |
+
+> [!IMPORTANT]
+> For Demo Day / PoC Q&A, explicitly state: *"The target state architecture is fully documented and designed for production. The current build demonstrates the core risk engine, offline-first architecture, and role-based dashboard. Phase 6–8 components are implementation-ready pending government pilot approval."*
+> This is not a weakness — it is intellectual honesty that signals operational maturity.
+
+## 4.2 Minimal Viable Phase 1 Architecture
+
+For PoC, the system can run on a single Ubuntu 22.04 server (or VM) with:
+
+```
+Infrastructure (PoC only):
+├── 1× Server: 8 vCPU, 16 GB RAM, 200 GB SSD
+├── Docker Compose (no Kubernetes required at PoC)
+│     ├── PostgreSQL 15 container
+│     ├── FastAPI container (API + Risk Engine)
+│     ├── Redis container (job queue)
+│     ├── Celery worker container
+│     └── Nginx container (TLS termination)
+├── Android APK (sideloaded or via internal distribution)
+└── React web app (static build served by Nginx)
+```
+
+This is deployable by 1 DevOps engineer in 1–2 days. The same Docker Compose can be lifted into Kubernetes for production scaling.
+
+---
+
+# Gap 5 – Operational Policies
+
+## 5.1 Human-in-the-Loop (HITL) Safeguard Policy
+
+**Policy Statement:** The system provides decision support. It does not make decisions. Every High or Critical risk flag requires a human review step before any intervention is recorded.
+
+### HITL Enforcement Rules
+
+| Risk Tier | System Action | Required Human Action |
+|---|---|---|
+| Low | Display green flag; no alert | None required (AWW may note in next visit) |
+| Medium | Display amber flag | AWW acknowledges flag in app (one-tap) |
+| High | Display red flag + top-3 risk factors | AWW must review and select: "Discuss at home visit" or "Create referral" |
+| Critical | Display red flag + alert tone | AWW **must** create a referral record before dismissing; system will not allow dismissal without action |
+
+**Supervisor override:** Any Supervisor can downgrade a High/Critical flag with a mandatory reason code. This is logged in `audit_log` and triggers a weekly digest alert to CDPO.
+
+**No automated referrals:** The system never creates a referral record autonomously. A human (AWW or Supervisor) is always the agent of the referral action.
+
+This policy is declared in the system's Terms of Use, Model Card, and displayed as a persistent footer in the dashboard.
+
+## 5.2 Model Rollback Policy
+
+**Trigger Condition:** Any of the following triggers an automatic rollback:
+
+| Trigger | Definition | Response Time |
+|---|---|---|
+| FNR (Critical tier) > 12% over 30-day window | Model missing too many high-risk children | ≤ 4 hours |
+| PSI input feature drift > 0.25 | Distribution shift detected; model no longer valid | ≤ 24 hours |
+| AUC-ROC drops > 0.05 from baseline in monitoring | Significant performance degradation | ≤ 24 hours |
+| Critical production bug in scoring logic | Any code defect affecting tier assignment | ≤ 1 hour |
+
+**Rollback Procedure:**
+1. ML team is alerted via Grafana/Alertmanager (P1 notification)
+2. `model_registry.active_version` is reverted to previous stable version (MLflow tag: `production-stable`)
+3. All assessments scored since the triggering event are flagged for re-scoring with `rescore_required = TRUE`
+4. Batch re-score job executed automatically within 1 hour of rollback
+5. Government programme officer notified within 2 hours; written incident report within 24 hours
+6. Rollback is logged in `model_versions/rollback_log.md` with timestamp, trigger, and approving officer
+
+**Release governance:** No new model version enters production without:
+- Domain expert sign-off on Model Card
+- Government technical counterpart approval
+- A 24-hour shadow mode pre-activation (even for minor updates)
+
+---
+
+# Cost Model Appendix
+
+## Infrastructure Cost (Annual, NIC/Government Cloud or Equivalent)
+
+### PoC / Pilot Stage (Year 1)
+
+| Item | Spec | Estimated Annual Cost (INR) |
+|---|---|---|
+| Compute: Application server | 2× VMs, 8 vCPU / 16 GB RAM | ₹1,20,000 – ₹1,80,000 |
+| Compute: Database server | 1× VM, 8 vCPU / 32 GB RAM, 500 GB SSD | ₹1,50,000 – ₹2,00,000 |
+| Object storage (MinIO / NIC) | 1 TB | ₹15,000 – ₹30,000 |
+| Network / egress | Internal NIC network (minimal cost) | ₹10,000 – ₹20,000 |
+| SSL certificates, domain | — | ₹5,000 – ₹10,000 |
+| **PoC Infrastructure Total** | | **₹3,00,000 – ₹4,40,000/year** |
+
+### Production Stage (Year 2+, Single State)
+
+| Item | Spec | Estimated Annual Cost (INR) |
+|---|---|---|
+| Compute cluster | 4–6 VMs (K8s nodes), 16 vCPU / 32 GB RAM each | ₹6,00,000 – ₹10,00,000 |
+| Database (HA cluster) | 2× primary/replica, 32 GB RAM / 1 TB SSD | ₹4,00,000 – ₹6,00,000 |
+| Object storage | 5 TB | ₹75,000 – ₹1,50,000 |
+| Network, load balancer | — | ₹60,000 – ₹1,20,000 |
+| Monitoring stack | Grafana Cloud OSS or self-hosted (minimal) | ₹0 – ₹30,000 |
+| **Production Infrastructure Total** | | **₹11,35,000 – ₹18,00,000/year** |
+
+> [!NOTE]
+> If hosted on NIC Data Centre under empanelled rates (as recommended), actual costs may be 30–50% lower than market equivalents. These figures are reference estimates only; final costs depend on NIC/SDC rate card.
+
+## Per-Child Operational Cost (Amortised)
+
+At full state scale (50,000 AWCs, 40 children each, 2 screenings/year):
+
+| Cost Category | Annual Cost (INR) | Per-Child Cost (INR) |
+|---|---|---|
+| Infrastructure (production) | ₹15,00,000 | ₹0.38 |
+| O&M staffing (3 FTE technical) | ₹36,00,000 | ₹0.90 |
+| Annual model retraining + audit | ₹5,00,000 | ₹0.13 |
+| **Total per child screened per year** | | **~₹1.41** |
+
+This cost per child is comparable to postage for a paper-based form system, making the economic case straightforward to present.
+
+## Android Device Requirement Estimate (Pilot)
+
+| Deployment | Devices Required | Recommended Spec | Unit Cost (INR) | Total (INR) |
+|---|---|---|---|---|
+| Pilot (50 AWWs) | 50 | Android 8+, 2 GB RAM, 16 GB storage | ₹6,000 – ₹8,000 | ₹3,00,000 – ₹4,00,000 |
+| State scale (50,000 AWWs) | 50,000 | Same | ₹6,000 – ₹8,000 | ₹30 Cr – ₹40 Cr |
+
+> [!IMPORTANT]
+> Many AWWs already use smartphones provided under government digitalisation schemes (e.g., POSHAN Tracker device procurement). Before budgeting for devices, audit what devices are already in field use in the target state. Real pilot cost may be zero for devices.
+
+## 5-Year Total Cost of Ownership (Single State, Illustrative)
+
+| Year | Infra | Staffing | Retraining/Audit | Misc | Total |
+|---|---|---|---|---|---|
+| Y1 (PoC/Pilot) | ₹4,40,000 | ₹55,00,000 | ₹3,00,000 | ₹5,00,000 | **₹67,40,000** |
+| Y2 (Production launch) | ₹15,00,000 | ₹50,00,000 | ₹8,00,000 | ₹3,00,000 | **₹76,00,000** |
+| Y3 | ₹16,00,000 | ₹48,00,000 | ₹5,00,000 | ₹2,00,000 | **₹71,00,000** |
+| Y4 (Tech refresh) | ₹18,00,000 | ₹48,00,000 | ₹8,00,000 | ₹5,00,000 | **₹79,00,000** |
+| Y5 (Handover) | ₹16,00,000 | ₹40,00,000 | ₹5,00,000 | ₹8,00,000 | **₹69,00,000** |
+| **5-Year Total** | **₹69,40,000** | **₹2,41,00,000** | **₹29,00,000** | **₹23,00,000** | **~₹3.62 Cr** |
+
+At ₹1.41/child/year (with 4 million annual screenings at full scale): **total per-child cost over 5 years ≈ ₹7.05** — comparable to a single SMS notification per child per year, with far greater programme value.
