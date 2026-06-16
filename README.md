@@ -78,6 +78,5 @@ Gap closure (PHC loop, shadow mode, cost model): `ecd_gap_closure.md`
 > All High and Critical flags require supervisor review and referral to a qualified health professional.
 > Model trained on validated synthetic data. Real-world calibration pending pilot deployment.
 > Model trained on validated synt
-hetic data. Real-world calibration pending pilot deployment.
 
 This is merge testing - Ashwin
