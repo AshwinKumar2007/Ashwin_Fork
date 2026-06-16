@@ -83,4 +83,4 @@ This is merge testing - Ashwin
 > Model trained on validated synt
 hetic data. Real-world calibration pending pilot deployment.
 
-This is merge testing - Ashwin and Aadhi
+This is merge testing - Ashwin
