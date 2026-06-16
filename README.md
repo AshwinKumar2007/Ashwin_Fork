@@ -79,3 +79,8 @@ Gap closure (PHC loop, shadow mode, cost model): `ecd_gap_closure.md`
 > Model trained on validated synthetic data. Real-world calibration pending pilot deployment.
 
 This is merge testing - Ashwin
+=======
+> Model trained on validated synt
+hetic data. Real-world calibration pending pilot deployment.
+
+This is merge testing - Ashwin and Aadhi
